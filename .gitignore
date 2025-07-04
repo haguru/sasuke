@@ -7,6 +7,10 @@
 *.dll
 *.so
 *.dylib
+sasuke
+
+# private key files
+*.pem
 
 # Test binary, built with `go test -c`
 *.test
@@ -29,4 +33,4 @@ go.work.sum
 
 # Editor/IDE
 # .idea/
-# .vscode/
+.vscode/

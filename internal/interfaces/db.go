@@ -58,4 +58,11 @@ type DBClient interface {
 	// Ping checks the health of the database connection.
 	// Returns an error if the database is unreachable or unhealthy.
 	Ping(ctx context.Context) error
+
+	// EnsureSchema ensures that a table (SQL) or index (NoSQL) exists.
+	// The 'name' parameter is the table or collection name.
+	// The 'schema' parameter is backend-specific (e.g., CREATE TABLE statement for SQL
+	// or IndexModel for MongoDB).
+	EnsureSchema(ctx context.Context, name string, schema Document) error
+
 }

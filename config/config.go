@@ -2,7 +2,9 @@ package config
 
 import (
 	"os"
+	"time"
 
+	"go.mongodb.org/mongo-driver/mongo/options"
 	"gopkg.in/yaml.v3"
 )
 
@@ -16,16 +18,44 @@ type ServiceConfig struct {
 	LogLevel       string   `yaml:"loglevel" validate:"required"`
 	Host           string   `yaml:"host" validate:"required"`
 	Port           string   `yaml:"port" validate:"required"`
+	PrivateKeyPath string   `yaml:"private_key_path" validate:"required"`
 	Database       Database `yaml:"database" validate:"required"`
-	PrivateKeyPath string   `yaml:"privateKeyPath" validate:"required"`
+}
+
+type Database struct {
+	Type string `yaml:"type" validate:"required"`
+	// For MongoDB
+	MongoDB MongoDBConfig `yaml:"mongodb_config" validate:"omitempty"`
+	// For PostgreSQL
+	Postgres PostgresConfig `yaml:"postgres_config" validate:"omitempty"`
 }
 
 // Database holds the database configuration.
-type Database struct {
-	Type         string `yaml:"type" validate:"required"`
-	Host         string `yaml:"host" validate:"required"`
-	DatabaseName string `yaml:"database_name" validate:"required"`
-	Port         int    `yaml:"port" validate:"required"`
+type MongoDBConfig struct {
+	Host         string             `yaml:"host" validate:"required"`
+	DatabaseName string             `yaml:"database_name" validate:"required"`
+	Port         int                `yaml:"port" validate:"required"`
+	Timeout      time.Duration      `yaml:"timeout"`
+	Options      MongoServerOptions `yaml:"mongo_server_options"`
+}
+
+type PostgresConfig struct {
+	Host         string                `yaml:"host" validate:"required"`
+	Port         int                   `yaml:"port" validate:"required"`
+	DatabaseName string                `yaml:"database_name" validate:"required"`
+	Options      PostgresServerOptions `yaml:"postgres_server_options"`
+}
+
+type MongoServerOptions struct {
+	ServerAPIVersion     string `yaml:"server_api_version"`
+	SetStrict            bool   `yaml:"set_strict"`
+	SetDeprecationErrors bool   `yaml:"set_deprecation_errors"`
+}
+
+type PostgresServerOptions struct {
+	MaxOpenConns    int           `yaml:"max_open_conns"`
+	MaxIdleConns    int           `yaml:"max_idle_conns"`
+	ConnMaxLifetime time.Duration `yaml:"conn_max_lifetime"`
 }
 
 // ReadLocalConfig reads the service configuration from a YAML file at the specified path.
@@ -45,4 +75,15 @@ func ReadLocalConfig(configPath string) (*ServiceConfig, error) {
 	}
 
 	return config, nil
+}
+
+func BuildServerAPIOptions(cfg MongoServerOptions) *options.ServerAPIOptions {
+	opts := options.ServerAPI(options.ServerAPIVersion(cfg.ServerAPIVersion))
+	if cfg.SetStrict {
+		opts.SetStrict(cfg.SetStrict)
+	}
+	if cfg.SetDeprecationErrors {
+		opts.SetDeprecationErrors(cfg.SetDeprecationErrors)
+	}
+	return opts
 }

@@ -42,7 +42,7 @@ func (s *Server) ListenAndServe() error {
 		// fmt.Printf("Failed to start server: %v\n", err)
 		return fmt.Errorf("failed to start server: %v", err)
 	}
-	// Log the successful start of the server
-	// fmt.Printf("Server is listening on %s\n", addr)
+
 	return nil
 }
+

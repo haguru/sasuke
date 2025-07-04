@@ -13,9 +13,31 @@ import (
 	"github.com/google/uuid"
 )
 
+const (
+	// DefaultMaxOpenConns is the default maximum number of open connections to the database.
+	DefaultMaxOpenConns = 10
+	// DefaultMaxIdleConns is the default maximum number of idle connections to the database.
+	DefaultMaxIdleConns = 5
+	// DefaultConnMaxLifetime is the default maximum amount of time a connection may be reused.
+	DefaultConnMaxLifetime = 30 * time.Second
+)
+
 // PostgresDatabaseClient implements the DBClient interface for PostgreSQL databases.
 type PostgresDatabaseClient struct {
-	db *sql.DB
+	db              *sql.DB
+	Host            string        // Host is the PostgreSQL server host
+	Port            int           // Port is the PostgreSQL server port
+	MaxOpenConns    int           // MaxOpenConns is the maximum number of open connections to the database
+	MaxIdleConns    int           // MaxIdleConns is the maximum number of idle connections to the database
+	ConnMaxLifetime time.Duration // ConnMaxLifetime is the maximum amount of time a connection may
+}
+
+func NewPostgresDatabaseClient(maxOpenConns, maxIdleConns int, connMaxLifetime time.Duration) interfaces.DBClient {
+	return &PostgresDatabaseClient{
+		MaxOpenConns:    maxOpenConns,
+		MaxIdleConns:    maxIdleConns,
+		ConnMaxLifetime: connMaxLifetime,
+	}
 }
 
 // Connect establishes a connection to a PostgreSQL database.
@@ -26,9 +48,9 @@ func (p *PostgresDatabaseClient) Connect(ctx context.Context, dsn string) error 
 		return fmt.Errorf("failed to open PostgreSQL database: %w", err)
 	}
 
-	p.db.SetMaxOpenConns(25)
-	p.db.SetMaxIdleConns(25)
-	p.db.SetConnMaxLifetime(5 * time.Minute)
+	p.db.SetMaxOpenConns(p.MaxOpenConns)
+	p.db.SetMaxIdleConns(p.MaxIdleConns)
+	p.db.SetConnMaxLifetime(p.ConnMaxLifetime)
 
 	return p.Ping(ctx)
 }
@@ -167,7 +189,11 @@ func (p *PostgresDatabaseClient) FindMany(ctx context.Context, tableName string,
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			fmt.Printf("failed to close rows: %v", cerr)
+		}
+	}()
 
 	var results []interfaces.Document
 	columns, err := rows.Columns()
@@ -323,17 +349,24 @@ func (p *PostgresDatabaseClient) Ping(ctx context.Context) error {
 	return p.db.PingContext(ctx)
 }
 
-// Helper for PostgreSQL-specific table creation. This still assumes a 'users' table structure
+// EnsureSchema creates the necessary table and indices for PostgreSQL-specific table creation. This still assumes a 'users' table structure
 // because DBClient doesn't have a generic schema definition method.
 // For true schema generality, you'd need a separate mechanism (e.g., migrations).
-func (p *PostgresDatabaseClient) EnsurePostgresTable(ctx context.Context, tableName string) error {
-	query := fmt.Sprintf(`
-		CREATE TABLE IF NOT EXISTS %s (
-			id UUID PRIMARY KEY,
-			username VARCHAR(255) UNIQUE NOT NULL,
-			password TEXT NOT NULL
-		);
-	`, tableName)
-	_, err := p.db.ExecContext(ctx, query)
+func (p *PostgresDatabaseClient) EnsureSchema(ctx context.Context, tableName string, schema interfaces.Document) error {
+	// check if p.db is nil
+	if p.db == nil {
+		return fmt.Errorf("PostgresDatabaseClient is not connected to a database")
+	}
+
+	// Ensure schema is a CREATE TABLE statement string
+	if schema == nil {
+		return fmt.Errorf("EnsurePostgresTable expects schema to be a CREATE TABLE statement string")
+	}
+	// Type assertion to string for CREATE TABLE statement
+	createStmt, ok := schema.(string)
+	if !ok {
+		return fmt.Errorf("EnsurePostgresTable expects schema to be a CREATE TABLE statement string")
+	}
+	_, err := p.db.ExecContext(ctx, createStmt)
 	return err
 }
