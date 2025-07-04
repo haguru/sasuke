@@ -1,0 +1,10 @@
+service_name: sasuke
+host: localhost
+port: 50051
+loglevel: DEBUG
+privateKeyPath: ./res/sharingan_key.pem
+database:
+  type: mongodb
+  host: localhost 
+  port: 27017 
+  database_name: sasukeDB

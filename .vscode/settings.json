@@ -1,0 +1,8 @@
+{
+    "go.gopath": "/home/bdkmv/.gvm/pkgsets/go1.24.2/global",
+    "go.goroot": "/home/bdkmv/.gvm/gos/go1.24.2",
+    "go.inferGopath": false,
+    "go.delveConfig": {
+
+    }
+}
