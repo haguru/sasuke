@@ -1,0 +1,13 @@
+name: reviewdog
+on: [pull_request]
+env:
+  REVIEWDOG_FAIL_ON_ERROR: 'true'
+jobs:
+  reviewdog:
+    name: runner / reviewdog
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - name: Run unit tests
+        run: |
+          make unittest

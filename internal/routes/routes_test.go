@@ -2,9 +2,15 @@ package routes
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/haguru/sasuke/internal/auth"
@@ -15,6 +21,50 @@ import (
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/crypto/bcrypt"
 )
+
+func TestMain(m *testing.M) {
+	// Generate a new ECDSA private key
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		panic("failed to generate ECDSA key: " + err.Error())
+	}
+
+	// Marshal the private key to DER format
+	der, err := x509.MarshalECPrivateKey(priv)
+	if err != nil {
+		panic("failed to marshal ECDSA key: " + err.Error())
+	}
+
+	// Create the PEM block
+	block := &pem.Block{
+		Type:  "EC PRIVATE KEY",
+		Bytes: der,
+	}
+
+	// Ensure the directory exists
+	_ = os.MkdirAll("../../res", 0o755)
+
+	// Write the PEM file
+	pemPath := "validKey.pem"
+	f, err := os.Create(pemPath)
+	if err != nil {
+		panic("failed to create PEM file: " + err.Error())
+	}
+	if err := pem.Encode(f, block); err != nil {
+		f.Close()
+		_ = os.Remove(pemPath)
+		panic("failed to encode PEM: " + err.Error())
+	}
+	f.Close()
+
+	// Run the tests
+	code := m.Run()
+
+	// Clean up the PEM file after tests
+	_ = os.Remove(pemPath)
+
+	os.Exit(code)
+}
 
 func TestRoute_Login(t *testing.T) {
 	tests := []struct {
@@ -64,11 +114,10 @@ func TestRoute_Login(t *testing.T) {
 			req.Header.Set("Content-Type", tt.contentType)
 		}
 		rr := httptest.NewRecorder()
-		
+
 		// create a mock userrepository or use a real one if available
 		userRepo := mocks.NewMockUserRepository(t)
-		
-		
+
 		// Hash the password for the mock user
 		// This is necessary because the user service expects a hashed password
 		// and the GetUserByUsername method will return a user with a hashed password.
@@ -89,7 +138,7 @@ func TestRoute_Login(t *testing.T) {
 
 		// Set up expectations for the mock if needed
 
-		privateKey, err := auth.LoadECDSAPrivateKey("../../res/sharingan_key.pem") // Mock or set up your private key as needed
+		privateKey, err := auth.LoadECDSAPrivateKey("validKey.pem") // Mock or set up your private key as needed
 		if err != nil {
 			t.Fatalf("Failed to load private key: %v", err)
 		}
