@@ -104,7 +104,7 @@ func TestCreateToken(t *testing.T) {
 	type args struct {
 		userName string
 		// We'll pass the private key to the function, so it's part of the args for the test
-		privateKey *ecdsa.PrivateKey
+		privateKey *ecdsa.PrivateKey // Use interface{} to allow both *ecdsa.PrivateKey and []byte for testing
 	}
 	tests := []struct {
 		name    string
