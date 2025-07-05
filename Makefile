@@ -6,10 +6,10 @@ all: privatekey build
 
 ARCH=$(shell uname -m)
 MICROSERVICE=sasuke
+KEYPATH=./res/sharingan_key.pem
 
 privatekey:
-	openssl ecparam -name prime256v1 -genkey -noout -out ./res/sharingan_key.pem
-	
+	openssl ecparam -name prime256v1 -genkey -noout -out $(KEYPATH)
 
 fmt:
 	go fmt ./...
