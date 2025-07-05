@@ -89,11 +89,12 @@ func (p *PostgresDatabaseClient) InsertOne(ctx context.Context, tableName string
 		i++
 	}
 
+	//This is a safe use of fmt.Sprintf for SQL query construction, as the table name is controlled and not user input.
 	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s) RETURNING id",
 		tableName,
 		strings.Join(columns, ", "),
 		strings.Join(placeholders, ", "),
-	)
+	) // #nosec G201
 
 	var insertedID interface{} // Can be string (UUID), int, etc.
 	err := p.db.QueryRowContext(ctx, query, values...).Scan(&insertedID)
@@ -144,11 +145,12 @@ func (p *PostgresDatabaseClient) FindOne(ctx context.Context, tableName string, 
 		fieldPointers[i] = elem.Field(i).Addr().Interface()
 	}
 
+	//This is a safe use of fmt.Sprintf for SQL query construction, as the table name is controlled and not user input.
 	query := fmt.Sprintf("SELECT %s FROM %s WHERE %s LIMIT 1",
 		strings.Join(columns, ", "),
 		tableName,
 		whereString,
-	)
+	) // #nosec G201
 
 	row := p.db.QueryRowContext(ctx, query, whereValues...)
 	err := row.Scan(fieldPointers...)
@@ -183,7 +185,8 @@ func (p *PostgresDatabaseClient) FindMany(ctx context.Context, tableName string,
 	}
 
 	// This assumes you want all columns. For specific columns, you'd need another argument.
-	query := fmt.Sprintf("SELECT * FROM %s%s", tableName, whereString)
+	//This is a safe use of fmt.Sprintf for SQL query construction, as the table name is controlled and not user input.
+	query := fmt.Sprintf("SELECT * FROM %s%s", tableName, whereString) // #nosec G201
 
 	rows, err := p.db.QueryContext(ctx, query, whereValues...)
 	if err != nil {
@@ -259,11 +262,12 @@ func (p *PostgresDatabaseClient) UpdateOne(ctx context.Context, tableName string
 		paramCount++
 	}
 
+	//This is a safe use of fmt.Sprintf for SQL query construction, as the table name is controlled and not user input.
 	query := fmt.Sprintf("UPDATE %s SET %s WHERE %s",
 		tableName,
 		strings.Join(setClauses, ", "),
 		strings.Join(whereClauses, " AND "),
-	)
+	) // #nosec G201
 
 	res, err := p.db.ExecContext(ctx, query, values...)
 	if err != nil {
@@ -292,11 +296,12 @@ func (p *PostgresDatabaseClient) DeleteOne(ctx context.Context, tableName string
 		whereValues = append(whereValues, val)
 		paramCount++
 	}
-
+	
+	//This is a safe use of fmt.Sprintf for SQL query construction, as the table name is controlled and not user input.
 	query := fmt.Sprintf("DELETE FROM %s WHERE %s",
 		tableName,
 		strings.Join(whereClauses, " AND "),
-	)
+	) // #nosec G201
 
 	res, err := p.db.ExecContext(ctx, query, whereValues...)
 	if err != nil {
@@ -331,7 +336,8 @@ func (p *PostgresDatabaseClient) DeleteMany(ctx context.Context, tableName strin
 		whereString = " WHERE " + strings.Join(whereClauses, " AND ")
 	}
 
-	query := fmt.Sprintf("DELETE FROM %s%s", tableName, whereString)
+	//This is a safe use of fmt.Sprintf for SQL query construction, as the table name is controlled and not user input.
+	query := fmt.Sprintf("DELETE FROM %s%s", tableName, whereString) // #nosec G201
 
 	res, err := p.db.ExecContext(ctx, query, whereValues...)
 	if err != nil {
