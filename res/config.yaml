@@ -11,6 +11,6 @@ database:
     database_name: sasukeDB
     timeout: 10s
     mongo_server_options:
-      server_api_version: 1
-      server_api_strict: true
-      server_api_deprecation_errors: true
+      api_version: 1
+      set_strict: true
+      set_deprecation_errors: true

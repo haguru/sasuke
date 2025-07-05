@@ -47,8 +47,8 @@ type PostgresConfig struct {
 }
 
 type MongoServerOptions struct {
-	ServerAPIVersion     string `yaml:"server_api_version"`
-	SetStrict            bool   `yaml:"set_strict"`
+	APIVersion         string `yaml:"api_version"`
+	SetStrict          bool   `yaml:"set_strict"`
 	SetDeprecationErrors bool   `yaml:"set_deprecation_errors"`
 }
 
@@ -78,12 +78,9 @@ func ReadLocalConfig(configPath string) (*ServiceConfig, error) {
 }
 
 func BuildServerAPIOptions(cfg MongoServerOptions) *options.ServerAPIOptions {
-	opts := options.ServerAPI(options.ServerAPIVersion(cfg.ServerAPIVersion))
-	if cfg.SetStrict {
-		opts.SetStrict(cfg.SetStrict)
-	}
-	if cfg.SetDeprecationErrors {
-		opts.SetDeprecationErrors(cfg.SetDeprecationErrors)
-	}
+	opts := options.ServerAPI(options.ServerAPIVersion(cfg.APIVersion))
+	opts.SetStrict(cfg.SetStrict)
+	opts.SetDeprecationErrors(cfg.SetDeprecationErrors)
+
 	return opts
 }
