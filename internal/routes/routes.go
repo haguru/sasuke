@@ -172,5 +172,8 @@ func (r *Route) Create(w http.ResponseWriter, req *http.Request) {
 		r.Metrics.CreateErrors.Inc()
 	}
 
-	w.Write([]byte("Create route called"))
+	if _, err := w.Write([]byte("Create route called")); err != nil {
+		http.Error(w, "Failed to write response", http.StatusInternalServerError)
+		return
+	}
 }
