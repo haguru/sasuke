@@ -1,0 +1,20 @@
+name: reviewdog
+on: [pull_request]
+env:
+  REVIEWDOG_FAIL_ON_ERROR: 'true'
+  HADOLINT_VERSION: v1.16.3
+jobs:
+  bandit:
+    name: runner / reviewdog
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: golangci-lint
+        uses: reviewdog/action-golangci-lint@v2.8.0
+        with:
+          go_version: "1.24.2"
+          golangci_lint_flags: "--config=.golangci.yml"
+      - name: hadolint
+        uses: reviewdog/action-hadolint@fc7ee4a9f71e521bc43e370819247b70e5327540 # v1.50.2
+        with:
+          reporter: github-pr-review # Default is github-pr-check
