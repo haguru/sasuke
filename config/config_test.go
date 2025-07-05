@@ -28,9 +28,12 @@ func TestReadLocalConfig(t *testing.T) {
 				PrivateKeyPath: "./res/sharingan_key.pem",
 				// Assuming the database configuration is also part of the config file
 				Database: Database{
-					Host:         "localhost",
-					Port:         27017,
-					DatabaseName: "sasukeDB",
+					Type: "mongodb",
+					MongoDB: MongoDBConfig{
+						Host:         "localhost",
+						Port:         27017,
+						DatabaseName: "sasukeDB",
+					},
 				},
 			},
 			wantErr: false,

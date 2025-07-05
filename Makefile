@@ -1,4 +1,6 @@
-.PHONY: all privatekey tidy build clean lint
+.PHONY: all privatekey tidy build clean lint unittest test
+.PHONY: fmt run install-lint pull-mongo start-mongo stop-mongo 
+.PHONY: pull-postgres start-postgres stop-all-containers
 
 all: privatekey build
 
@@ -38,3 +40,19 @@ install-lint:
 
 clean:
 	rm -f sharingan_key.pem sasuke
+
+pull-mongo:
+	docker pull mongodb/mongodb-community-server:latest
+
+start-mongo:
+	docker run --name sasuke-mongo -d -p 27017:27017 mongodb/mongodb-community-server:latest
+
+pull-postgres:
+	docker pull postgres:latest
+
+start-postgres:
+	docker run --name sasuke-postgres -d -p 5432:5432 postgres:latest
+
+stop-all-containers:
+	docker stop sasuke-mongo && docker rm sasuke-mongo
+	docker stop sasuke-postgres && docker rm sasuke-postgres

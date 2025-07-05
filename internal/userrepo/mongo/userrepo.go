@@ -5,26 +5,34 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/haguru/sasuke/internal/interfaces"
 	"github.com/haguru/sasuke/internal/models"
 	"github.com/haguru/sasuke/internal/userrepo/constants"
-	"github.com/haguru/sasuke/pkg/databases/mongo"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 
+	mongoClient "github.com/haguru/sasuke/pkg/databases/mongo"
 	mongosdk "go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 // MongoUserRepository implements UserRepository using the generic DBClient.
 type MongoUserRepository struct {
-	dbClient *mongo.MongoDBClient // Here we use the concrete Mongo implementation of DBClient
+	dbClient interfaces.DBClient // Here we use the concrete Mongo implementation of DBClient
 }
 
 // NewMongoUserRepository creates a new MongoDB repository instance.
 // It takes a concrete mongo.MongoDBClient.
-func NewMongoUserRepository(dbClient *mongo.MongoDBClient) *MongoUserRepository {
-	return &MongoUserRepository{dbClient: dbClient}
+func NewMongoUserRepository(dbClient interfaces.DBClient) (interfaces.UserRepository, error) {
+	if dbClient == nil {
+		return nil, fmt.Errorf("dbClient cannot be nil")
+	}
+	// Ensure the dbClient is of type MongoDBClient
+	if _, ok := dbClient.(*mongoClient.MongoDBClient); !ok {
+		return nil, fmt.Errorf("dbClient must be a MongoDB client")
+	}
+	return &MongoUserRepository{dbClient: dbClient}, nil
 }
 
 // AddUser saves a new user to MongoDB via DBClient.
@@ -93,7 +101,7 @@ func (r *MongoUserRepository) EnsureIndices(ctx context.Context) error {
 	}
 	// Here, we have to call a MongoDB-specific method provided by our concrete mongo.MongoDBClient
 	// because the generic DBClient interface doesn't expose index creation.
-	return r.dbClient.EnsureMongoIndex(ctx, constants.UsersCollection, indexModel)
+	return r.dbClient.EnsureSchema(ctx, constants.UsersCollection, indexModel)
 }
 
 // Close disconnects the MongoDB client.

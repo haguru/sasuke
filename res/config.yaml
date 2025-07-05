@@ -2,9 +2,15 @@ service_name: sasuke
 host: localhost
 port: 50051
 loglevel: DEBUG
-privateKeyPath: ./res/sharingan_key.pem
+private_key_path: ./res/sharingan_key.pem
 database:
-  type: mongodb
-  host: localhost 
-  port: 27017 
-  database_name: sasukeDB
+  type: mongo
+  mongodb_config:
+    host: localhost 
+    port: 27017 
+    database_name: sasukeDB
+    timeout: 10s
+    mongo_server_options:
+      server_api_version: 1
+      server_api_strict: true
+      server_api_deprecation_errors: true

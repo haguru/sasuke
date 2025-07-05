@@ -30,6 +30,8 @@ type MongoDBClient struct {
 	timeout    time.Duration
 }
 
+
+
 // NewMongoDB returns a interface for db client and error if it occurs
 func NewMongoDB(timeout time.Duration, opts *options.ServerAPIOptions) (interfaces.DBClient, error) {
 	db := &MongoDBClient{
@@ -80,6 +82,7 @@ func (m *MongoDBClient) Connect(ctx context.Context, dsn string) error {
 	}
 
 	// Check if the connection is successful by pinging the server
+	fmt.Println("MongoDBClient: Pinging MongoDB server...")
 	if err = m.client.Ping(ctx, readpref.Primary()); err != nil {
 		return fmt.Errorf("MongoDBClient: Failed to connect to MongoDB server: %v", err)
 	}
@@ -119,6 +122,11 @@ func (m *MongoDBClient) Disconnect(ctx context.Context) error {
 func (m *MongoDBClient) InsertOne(ctx context.Context, collectionName string, document interfaces.Document) (interface{}, error) {
 	fmt.Printf("MongoDBClient: Inserting one into %s: %v\n", collectionName, document)
 
+	// Validate the collection name
+	// Ensure that the collection name is not empty
+	if collectionName == "" {
+		return nil, fmt.Errorf("MongoDBClient: Collection name cannot be empty")
+	}
 	res, err := m.db.Collection(collectionName).InsertOne(ctx, document)
 	if err != nil {
 		return nil, fmt.Errorf("MongoDBClient: Failed to insert one into %s: %v", collectionName, err)
@@ -152,16 +160,20 @@ func (m *MongoDBClient) FindMany(ctx context.Context, collectionName string, fil
 	fmt.Printf("MongoDBClient: Finding many in %s with filter: %v\n", collectionName, filter)
 	cursor, err := m.db.Collection(collectionName).Find(ctx, filter)
 	if err != nil {
-		return nil, fmt.Errorf("MongoDBClient: Finding many in %s with filter: %v failed: %v\n", collectionName, filter, err)
+		return nil, fmt.Errorf("MongoDBClient: Finding many in %s with filter: %v failed: %v", collectionName, filter, err)
 	}
 
-	defer cursor.Close(ctx)
+	defer func() {
+		if err := cursor.Close(ctx); err != nil {
+			fmt.Printf("MongoDBClient: Failed to close cursor: %v\n", err)
+		}
+	}()
 
 	var results []interfaces.Document
 	for cursor.Next(ctx) {
 		var doc map[string]interface{}
 		if err := cursor.Decode(&doc); err != nil {
-			return nil, fmt.Errorf("MongoDBClient: Failed to decode cursor: %v\n", err)
+			return nil, fmt.Errorf("MongoDBClient: Failed to decode cursor: %v", err)
 		}
 		results = append(results, doc)
 	}
@@ -178,7 +190,7 @@ func (m *MongoDBClient) UpdateOne(ctx context.Context, collectionName string, fi
 
 	res, err := m.db.Collection(collectionName).UpdateOne(ctx, filter, update)
 	if err != nil {
-		return 0, fmt.Errorf("MongoDBClient: Failed updating one in %s with filter %v, update %v: %v\n", collectionName, filter, update, err)
+		return 0, fmt.Errorf("MongoDBClient: Failed updating one in %s with filter %v, update %v: %v", collectionName, filter, update, err)
 	}
 
 	return res.ModifiedCount, nil
@@ -192,7 +204,7 @@ func (m *MongoDBClient) DeleteOne(ctx context.Context, collectionName string, fi
 
 	res, err := m.db.Collection(collectionName).DeleteOne(ctx, filter)
 	if err != nil {
-		return 0, fmt.Errorf("MongoDBClient: Failed deleting one from %s with filter %v: %v\n", collectionName, filter, err)
+		return 0, fmt.Errorf("MongoDBClient: Failed deleting one from %s with filter %v: %v", collectionName, filter, err)
 	}
 
 	return res.DeletedCount, nil
@@ -206,7 +218,7 @@ func (m *MongoDBClient) DeleteMany(ctx context.Context, collectionName string, f
 
 	res, err := m.db.Collection(collectionName).DeleteMany(ctx, filter)
 	if err != nil {
-		return 0, fmt.Errorf("MongoDBClient: Failed Deleting many from %s with filter %v: %v\n", collectionName, filter, err)
+		return 0, fmt.Errorf("MongoDBClient: Failed Deleting many from %s with filter %v: %v", collectionName, filter, err)
 	}
 
 	return res.DeletedCount, nil
@@ -216,7 +228,7 @@ func (m *MongoDBClient) DeleteMany(ctx context.Context, collectionName string, f
 // It takes a context for cancellation and timeouts.
 func (m *MongoDBClient) Ping(ctx context.Context) error {
 	fmt.Println("MongoDBClient: Pinging...")
-	return m.client.Ping(ctx, readpref.Primary())
+	return m.client.Ping(ctx,nil)
 }
 
 // getDBNameFromMongoDSN extracts the database name from a MongoDB DSN (Data Source Name).
@@ -248,8 +260,28 @@ func (m *MongoDBClient) getDBNameFromMongoDSN(dsn string) (string, error) {
 	return dbName, nil
 }
 
-// Helper for MongoDB-specific index creation (not part of generic DBClient)
-func (m *MongoDBClient) EnsureMongoIndex(ctx context.Context, collectionName string, model mongo.IndexModel) error {
+// EnsureSchema performs MongoDB-specific index creation (not part of generic DBClient)
+// It ensures that the specified collection has the required index defined by the schema.
+// The schema is expected to be a mongo.IndexModel, which defines the index to be created
+// If the collection does not exist, it will be created automatically by MongoDB when the index is created.
+// This method is used to ensure that the necessary indexes are in place for efficient querying.
+func (m *MongoDBClient) EnsureSchema(ctx context.Context, collectionName string, schema interfaces.Document) error {
+	// verify m.db is not nil
+	if m.db == nil {
+		return fmt.Errorf("MongoDBClient is not connected to a database")
+	}
+	
+	// Ensure schema is a mongo.IndexModel
+	if schema == nil {
+		return fmt.Errorf("EnsureSchema expects schema to be a mongo.IndexModel")
+	}
+
+	// Type assertion to mongo.IndexModel
+	model, ok := schema.(mongo.IndexModel)
+	if !ok {
+		return fmt.Errorf("EnsureSchema: expected mongo.IndexModel for MongoDB")
+	}
+	// Create the index on the specified collection
 	collection := m.db.Collection(collectionName)
 	_, err := collection.Indexes().CreateOne(ctx, model)
 	return err

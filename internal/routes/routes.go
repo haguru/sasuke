@@ -3,6 +3,7 @@ package routes
 import (
 	"crypto/ecdsa"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/haguru/sasuke/internal/auth"
@@ -14,6 +15,8 @@ import (
 const (
 	CreateRouteAPI  = "/create"
 	MetricsRouteAPI = "/metrics"
+	LoginRouteAPI   = "/login"
+	SignupRouteAPI  = "/signup"
 
 	ContentType     = "Content-Type"
 	ContentTypeJson = "application/json"
@@ -39,6 +42,49 @@ func NewRoute(metrics *metrics.Metrics, userService *userservice.UserService, pr
 		PrivateKey: privateKey,
 	}
 }
+
+// Signup route handles user signup requests
+// It expects a POST request with a JSON body containing user information.
+// If the request method is not POST, it returns a 405 Method Not Allowed error.
+// If the request body cannot be parsed, it returns a 400 Bad Request error.
+// If the request is valid, it sets the response header to application/json.
+// If the user is successfully registered, it responds with a 201 Created status.
+// If registration fails, it returns a 409 Conflict error.
+func (r *Route) Signup(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Check request content type
+	if req.Header.Get(ContentType) != ContentTypeJson {
+		http.Error(w, "Content-Type must be application/json", http.StatusBadRequest)
+		return
+	}
+
+	signupRequest := &models.User{}
+	err := json.NewDecoder(req.Body).Decode(signupRequest)
+	if err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Register user using userservice
+	userID, err := r.UserService.RegisterUser(req.Context(), signupRequest.Username, signupRequest.Password)
+	if err != nil {
+		http.Error(w, "Failed to register user", http.StatusConflict)
+		return
+	}
+
+	w.Header().Set(ContentType, ContentTypeJson)
+	w.WriteHeader(http.StatusCreated)
+	message := fmt.Sprintf("User created successfully with ID: %s", userID)
+	if err := json.NewEncoder(w).Encode(map[string]string{"message": message}); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
+}
+
 
 // Login route handles user login requests
 // It expects a POST request with a JSON body containing user credentials.

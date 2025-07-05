@@ -1,14 +1,21 @@
 package app
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"fmt"
 
 	"github.com/haguru/sasuke/config"
 	"github.com/haguru/sasuke/internal/auth"
+	"github.com/haguru/sasuke/internal/interfaces"
 	"github.com/haguru/sasuke/internal/metrics"
 	"github.com/haguru/sasuke/internal/routes"
 	"github.com/haguru/sasuke/internal/server"
+	mongoUserRepo "github.com/haguru/sasuke/internal/userrepo/mongo"
+	postgresUserRepo "github.com/haguru/sasuke/internal/userrepo/postgres"
+	"github.com/haguru/sasuke/internal/userservice"
+	"github.com/haguru/sasuke/pkg/databases/mongo"
+	"github.com/haguru/sasuke/pkg/databases/postgres"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -22,8 +29,8 @@ import (
 // which is read and validated during the initialization process.
 // The App struct also includes methods for starting the server and handling routes.
 type App struct {
-	Server interface{} // Placeholder for server interface
-	Config config.ServiceConfig
+	Server interfaces.Server // Placeholder for server interface
+	Config *config.ServiceConfig
 }
 
 // NewApp initializes a new App instance with the provided configuration path.
@@ -39,7 +46,7 @@ func NewApp(configPath string) (*App, error) {
 	}
 
 	app := &App{
-		Config: *cfg,
+		Config: cfg,
 	}
 
 	// Validate the configuration
@@ -52,7 +59,7 @@ func NewApp(configPath string) (*App, error) {
 	// Initialize server, database, and metrics here if needed
 	serverInstance := server.NewServer(cfg.Host, cfg.Port)
 	app.Server = serverInstance
-
+	
 	// initialize metrics
 	metricsInstance := metrics.NewMetrics(cfg.ServiceName)
 
@@ -68,33 +75,98 @@ func NewApp(configPath string) (*App, error) {
 		return nil, fmt.Errorf("failed to load private key: %v", err)
 	}
 
-	// Initialize user repository
-	
-	// userRepo := userrepository.NewUserRepository(cfg.DatabaseURL) // Assuming you have a user repository implementation
-	
-	// initialize user service
-	// userService := userservice.NewUserService(userRepo) // Assuming you have a user
+	// initalize db client
+	var dbClient interfaces.DBClient
+	var userRepo interfaces.UserRepository
+	switch cfg.Database.Type {
+	case "mongo":
+		// Initialize MongoDB client
+		serverOptions := config.BuildServerAPIOptions(cfg.Database.MongoDB.Options)
+		dbClient, err = mongo.NewMongoDB(cfg.Database.MongoDB.Timeout, serverOptions)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize MongoDB client: %v", err)
+		}
+		// Ensure the MongoDB client is connected
+		dsn := fmt.Sprintf("mongodb://%s:%d/%s", cfg.Database.MongoDB.Host, cfg.Database.MongoDB.Port, cfg.Database.MongoDB.DatabaseName)
+		if err = dbClient.Connect(context.Background(), dsn); err != nil {
+			return nil, fmt.Errorf("failed to connect to MongoDB: %v", err)
+		}
+
+		// initialize MongoDB repository
+		userRepo, err = mongoUserRepo.NewMongoUserRepository(dbClient)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize MongoDB repository: %v", err)
+		}
+
+	case "postgres":
+		// Initialize PostgreSQL client
+		serverOptions := &cfg.Database.Postgres.Options
+		
+		// Create PostgreSQL database client
+		dbClient = postgres.NewPostgresDatabaseClient(serverOptions.MaxOpenConns, serverOptions.MaxIdleConns, serverOptions.ConnMaxLifetime)
+
+		// // Ensure the PostgreSQL client is connected
+		// dsn := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s sslmode=disable",
+		// 	cfg.Database.Postgres.Host,
+		// 	cfg.Database.Postgres.Port,
+		// 	cfg.Database.Postgres.DatabaseName,
+		// 	cfg.Database.Postgres.User,
+		// 	cfg.Database.Postgres.Password,
+		// )
+		// initialize PostgreSQL repository
+		userRepo, err = postgresUserRepo.NewPostgresUserRepository(dbClient)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize PostgreSQL repository: %v", err)
+		}
+
+	default:
+		return nil, fmt.Errorf("unsupported database type: %s", cfg.Database.Type)
+	}
+
+	// Ensure indices for MongoDB or PostgreSQL
+	if err = userRepo.EnsureIndices(context.Background()); err != nil { // Ensure indices are created
+		return nil, fmt.Errorf("failed to ensure indices: %v", err)
+	}
+
+	// create user service
+	userService := userservice.NewUserService(userRepo)
 
 	// create for route
-	route := routes.NewRoute(metricsInstance, privateKey)
+	route := routes.NewRoute(metricsInstance, userService, privateKey)
 
 	// metrics route
 	metricsHandler := promhttp.Handler().ServeHTTP
-	err = serverInstance.AddRoute(routes.MetricsRouteAPI, metricsHandler)
+	err = app.Server.AddRoute(routes.MetricsRouteAPI, metricsHandler)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add metrics route: %v", err)
 	}
 
-	// Add routes to the server
-	err = serverInstance.AddRoute(routes.CreateRouteAPI, route.Create)
+	// Add create route
+	err = app.Server.AddRoute(routes.CreateRouteAPI, route.Create)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add create route: %v", err)
 	}
 
-	// start the server
-	if err := serverInstance.ListenAndServe(); err != nil {
-		return nil, fmt.Errorf("failed to start server: %v", err)
+	// Add signup route
+	err = app.Server.AddRoute(routes.SignupRouteAPI, route.Signup)
+	if err != nil {
+		return nil, fmt.Errorf("failed to add signup route: %v", err)
+	}
+
+	// Add login route
+	err = app.Server.AddRoute(routes.LoginRouteAPI, route.Login)
+	if err != nil {
+		return nil, fmt.Errorf("failed to add login route: %v", err)
 	}
 
 	return app, nil
+}
+
+func (app *App) Run() error {
+	// start the server
+	if err := app.Server.ListenAndServe(); err != nil {
+		return fmt.Errorf("failed to start server: %v", err)
+	}
+
+	return nil
 }
