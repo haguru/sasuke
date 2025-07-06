@@ -47,8 +47,8 @@ type PostgresConfig struct {
 }
 
 type MongoServerOptions struct {
-	APIVersion         string `yaml:"api_version"`
-	SetStrict          bool   `yaml:"set_strict"`
+	APIVersion           string `yaml:"api_version"`
+	SetStrict            bool   `yaml:"set_strict"`
 	SetDeprecationErrors bool   `yaml:"set_deprecation_errors"`
 }
 

@@ -17,7 +17,7 @@ import (
 	"github.com/haguru/sasuke/pkg/databases/mongo"
 	"github.com/haguru/sasuke/pkg/databases/postgres"
 
-	"github.com/go-playground/validator/v10"
+	structValidator "github.com/go-playground/validator/v10"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -50,16 +50,16 @@ func NewApp(configPath string) (*App, error) {
 	}
 
 	// Validate the configuration
-	validate := validator.New()
-	if err := validate.Struct(cfg); err != nil {
+	validator := structValidator.New()
+	if err := validator.Struct(cfg); err != nil {
 		// Validation failed, handle the error
-		errors := err.(validator.ValidationErrors)
+		errors := err.(structValidator.ValidationErrors)
 		return nil, fmt.Errorf("validation error: %s", errors)
 	}
 	// Initialize server, database, and metrics here if needed
 	serverInstance := server.NewServer(cfg.Host, cfg.Port)
 	app.Server = serverInstance
-	
+
 	// initialize metrics
 	metricsInstance := metrics.NewMetrics(cfg.ServiceName)
 
@@ -101,7 +101,7 @@ func NewApp(configPath string) (*App, error) {
 	case "postgres":
 		// Initialize PostgreSQL client
 		serverOptions := &cfg.Database.Postgres.Options
-		
+
 		// Create PostgreSQL database client
 		dbClient = postgres.NewPostgresDatabaseClient(serverOptions.MaxOpenConns, serverOptions.MaxIdleConns, serverOptions.ConnMaxLifetime)
 
@@ -132,7 +132,7 @@ func NewApp(configPath string) (*App, error) {
 	userService := userservice.NewUserService(userRepo)
 
 	// create for route
-	route := routes.NewRoute(metricsInstance, userService, privateKey)
+	route := routes.NewRoute(metricsInstance, userService, privateKey, validator)
 
 	// metrics route
 	metricsHandler := promhttp.Handler().ServeHTTP

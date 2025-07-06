@@ -4,8 +4,8 @@ package models
 // It contains fields for the user's ID, username, and password.
 type User struct {
 	ID       string `json:"id"`
-	Username string `json:"username" validate:"required"`
-	Password string `json:"password" validate:"required"`
+	Username string `json:"username" validate:"required,min=8,max=64"`
+	Password string `json:"password" validate:"required,min=8,max=64"`
 }
 
 // NewUser creates a new User instance with the specified username and password.

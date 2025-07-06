@@ -1,6 +1,5 @@
 package interfaces
 
-
 import "context"
 
 // Document is a generic interface to represent data that can be stored
@@ -64,5 +63,4 @@ type DBClient interface {
 	// The 'schema' parameter is backend-specific (e.g., CREATE TABLE statement for SQL
 	// or IndexModel for MongoDB).
 	EnsureSchema(ctx context.Context, name string, schema Document) error
-
 }

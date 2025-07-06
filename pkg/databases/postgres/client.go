@@ -296,7 +296,7 @@ func (p *PostgresDatabaseClient) DeleteOne(ctx context.Context, tableName string
 		whereValues = append(whereValues, val)
 		paramCount++
 	}
-	
+
 	//This is a safe use of fmt.Sprintf for SQL query construction, as the table name is controlled and not user input.
 	query := fmt.Sprintf("DELETE FROM %s WHERE %s",
 		tableName,

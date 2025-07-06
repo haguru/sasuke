@@ -1,9 +1,9 @@
 package config
 
 import (
+	"os"
 	"reflect"
 	"testing"
-	"os"
 	"time"
 
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -74,7 +74,7 @@ func TestReadLocalConfig(t *testing.T) {
 			want:    nil,
 			wantErr: true,
 		},
-				{
+		{
 			name: "invalid YAML file",
 			args: args{
 				configPath: "./invalid_config.yaml",

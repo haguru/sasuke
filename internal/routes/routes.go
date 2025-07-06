@@ -10,6 +10,8 @@ import (
 	"github.com/haguru/sasuke/internal/metrics"
 	"github.com/haguru/sasuke/internal/models"
 	"github.com/haguru/sasuke/internal/userservice"
+
+	structValidator "github.com/go-playground/validator/v10"
 )
 
 const (
@@ -24,22 +26,25 @@ const (
 
 // Route struct defines the structure for the route handler
 type Route struct {
-	Metrics     *metrics.Metrics        // Placeholder for metrics interface
-	UserService *userservice.UserService // Placeholder for user service interface
-	PrivateKey  *ecdsa.PrivateKey       // Add private key
+	Metrics     *metrics.Metrics          // Placeholder for metrics interface
+	UserService *userservice.UserService  // Placeholder for user service interface
+	PrivateKey  *ecdsa.PrivateKey         // Add private key
+	validator   *structValidator.Validate // Placeholder for validator interface
 }
 
 // NewRoute initializes a new Route instance with the provided metrics and keys
 // This function is designed to be called during the application setup phase
 // where the metrics dependency can be injected.
 // It allows for the Route to be created without immediately requiring the metrics to be set,
-func NewRoute(metrics *metrics.Metrics, userService *userservice.UserService, privateKey *ecdsa.PrivateKey) *Route {
+func NewRoute(metrics *metrics.Metrics, userService *userservice.UserService,
+	privateKey *ecdsa.PrivateKey, validator *structValidator.Validate) *Route {
 	// Create a new Route instance with the provided dependencies
 	// Note: metrics will be injected later by the app.go when initializing the server
 	return &Route{
-		Metrics:    metrics, // Metrics will be set later
+		Metrics:     metrics, // Metrics will be set later
 		UserService: userService,
-		PrivateKey: privateKey,
+		PrivateKey:  privateKey,
+		validator:   validator,
 	}
 }
 
@@ -69,6 +74,13 @@ func (r *Route) Signup(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	if err := r.validator.Struct(signupRequest); err != nil {
+		// Validation failed, handle the error
+		errors := err.(structValidator.ValidationErrors)
+		http.Error(w, fmt.Sprintf("validation error: %s", errors), http.StatusBadRequest)
+		return
+	}
+
 	// Register user using userservice
 	userID, err := r.UserService.RegisterUser(req.Context(), signupRequest.Username, signupRequest.Password)
 	if err != nil {
@@ -84,7 +96,6 @@ func (r *Route) Signup(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 }
-
 
 // Login route handles user login requests
 // It expects a POST request with a JSON body containing user credentials.
@@ -117,6 +128,14 @@ func (r *Route) Login(w http.ResponseWriter, req *http.Request) {
 	err := json.NewDecoder(req.Body).Decode(loginRequest)
 	if err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate the login request
+	if err := r.validator.Struct(loginRequest); err != nil {
+		// Validation failed, handle the error
+		errors := err.(structValidator.ValidationErrors)
+		http.Error(w, fmt.Sprintf("validation error: %s", errors), http.StatusBadRequest)
 		return
 	}
 

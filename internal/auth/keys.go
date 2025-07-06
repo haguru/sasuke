@@ -14,7 +14,7 @@ func LoadECDSAPrivateKey(keyPath string) (*ecdsa.PrivateKey, error) {
 	if _, err := os.Stat(keyPath); err != nil {
 		return nil, fmt.Errorf("private key path does not exist: %v", err)
 	}
-	
+
 	keyData, err := os.ReadFile(keyPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read key file: %w", err)
