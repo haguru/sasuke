@@ -52,10 +52,12 @@ func TestReadLocalConfig(t *testing.T) {
 				Database: Database{
 					Type: "mongo",
 					MongoDB: MongoDBConfig{
-						Host:         "localhost",
-						Port:         27017,
-						DatabaseName: "sasukeDB",
-						Timeout:      10 * time.Second,
+						Host:             "localhost",
+						Port:             27017,
+						DatabaseName:     "sasukeDB",
+						Timeout:          10 * time.Second,
+						ValidCollections: []string{"users"},
+						ValidFields:      []string{"username", "password"},
 						Options: MongoServerOptions{
 							APIVersion:           "1",
 							SetStrict:            true,

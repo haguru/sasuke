@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/haguru/sasuke/config"
 	"github.com/haguru/sasuke/internal/interfaces"
 
 	"go.mongodb.org/mongo-driver/mongo"
@@ -21,20 +22,24 @@ const (
 
 // MongoDBClient implements the interfaces.DBClient interface for MongoDB operations.
 type MongoDBClient struct {
-	Uri        string
-	Host       string
-	Port       int
-	ServerOpts *options.ServerAPIOptions
-	client     *mongo.Client
-	db         *mongo.Database
-	timeout    time.Duration
+	Uri              string
+	Host             string
+	Port             int
+	ServerOpts       *options.ServerAPIOptions
+	client           *mongo.Client
+	db               *mongo.Database
+	timeout          time.Duration
+	validCollections map[string]bool // A map to validate collection names
+	validFields      map[string]bool // A map to validate field names
 }
 
 // NewMongoDB returns a interface for db client and error if it occurs
-func NewMongoDB(timeout time.Duration, opts *options.ServerAPIOptions) (interfaces.DBClient, error) {
+func NewMongoDB(dbConfig *config.MongoDBConfig) (interfaces.DBClient, error) {
 	db := &MongoDBClient{
-		timeout:    timeout,
-		ServerOpts: opts,
+		timeout:          dbConfig.Timeout,
+		ServerOpts:       config.BuildServerAPIOptions(dbConfig.Options),
+		validCollections: config.ListToMap(dbConfig.ValidCollections),
+		validFields:      config.ListToMap(dbConfig.ValidFields),
 	}
 
 	return db, nil
@@ -118,14 +123,24 @@ func (m *MongoDBClient) Disconnect(ctx context.Context) error {
 // It takes a context, the name of the collection, and the document to be inserted.
 // It returns the inserted ID and an error if the operation fails.
 func (m *MongoDBClient) InsertOne(ctx context.Context, collectionName string, document interfaces.Document) (interface{}, error) {
-	fmt.Printf("MongoDBClient: Inserting one into %s: %v\n", collectionName, document)
+	// Avoid printing sensitive information like passwords
+	fmt.Printf("MongoDBClient: Inserting one into %s\n", collectionName)
+
+	// validate collectionName against a whitelist
+	if !m.validCollections[collectionName] {
+		return nil, fmt.Errorf("MongoDBClient: Invalid collection name: %s", collectionName)
+	}
 
 	// Validate the collection name
 	// Ensure that the collection name is not empty
 	if collectionName == "" {
 		return nil, fmt.Errorf("MongoDBClient: Collection name cannot be empty")
 	}
-	res, err := m.db.Collection(collectionName).InsertOne(ctx, document)
+
+	// Sanitize the document to prevent NoSQL injection
+	sanitizedDocument := m.sanitizeDocument(document)
+
+	res, err := m.db.Collection(collectionName).InsertOne(ctx, sanitizedDocument)
 	if err != nil {
 		return nil, fmt.Errorf("MongoDBClient: Failed to insert one into %s: %v", collectionName, err)
 	}
@@ -140,7 +155,20 @@ func (m *MongoDBClient) InsertOne(ctx context.Context, collectionName string, do
 func (m *MongoDBClient) FindOne(ctx context.Context, collectionName string, filter interfaces.Document, result interfaces.Document) error {
 	fmt.Printf("MongoDBClient: Finding one in %s with filter: %v\n", collectionName, filter)
 
-	err := m.db.Collection(collectionName).FindOne(ctx, filter).Decode(result)
+	// validate collectionName against a whitelist
+	if !m.validCollections[collectionName] {
+		return fmt.Errorf("MongoDBClient: Invalid collection name: %s", collectionName)
+	}
+
+	// check collectionName to ensure it is not empty
+	if collectionName == "" {
+		return fmt.Errorf("MongoDBClient: Collection name cannot be empty")
+	}
+
+	// sanitize filer to prevent noSQL injection
+	sanitizedFilter := m.sanitizeDocument(filter)
+
+	err := m.db.Collection(collectionName).FindOne(ctx, sanitizedFilter).Decode(result)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			return fmt.Errorf("MongoDBClient: No document found in %s with filter: %v", collectionName, filter)
@@ -156,9 +184,22 @@ func (m *MongoDBClient) FindOne(ctx context.Context, collectionName string, filt
 // It returns a slice of documents that match the filter and an error if the operation fails.
 func (m *MongoDBClient) FindMany(ctx context.Context, collectionName string, filter interfaces.Document) ([]interfaces.Document, error) {
 	fmt.Printf("MongoDBClient: Finding many in %s with filter: %v\n", collectionName, filter)
-	cursor, err := m.db.Collection(collectionName).Find(ctx, filter)
+
+	// validate collectionName against a whitelist
+	if !m.validCollections[collectionName] {
+		return nil, fmt.Errorf("MongoDBClient: Invalid collection name: %s", collectionName)
+	}
+	// check collectionName to ensure it is not empty
+	if collectionName == "" {
+		return nil, fmt.Errorf("MongoDBClient: Collection name cannot be empty")
+	}
+
+	// sanitize filter to prevent noSQL injection
+	sanitizedFilter := m.sanitizeDocument(filter)
+
+	cursor, err := m.db.Collection(collectionName).Find(ctx, sanitizedFilter)
 	if err != nil {
-		return nil, fmt.Errorf("MongoDBClient: Finding many in %s with filter: %v failed: %v", collectionName, filter, err)
+		return nil, fmt.Errorf("MongoDBClient: Finding many in %s with filter: %v failed: %v", collectionName, sanitizedFilter, err)
 	}
 
 	defer func() {
@@ -186,9 +227,22 @@ func (m *MongoDBClient) FindMany(ctx context.Context, collectionName string, fil
 func (m *MongoDBClient) UpdateOne(ctx context.Context, collectionName string, filter interfaces.Document, update interfaces.Document) (int64, error) {
 	fmt.Printf("MongoDBClient: Updating one in %s with filter %v, update %v\n", collectionName, filter, update)
 
-	res, err := m.db.Collection(collectionName).UpdateOne(ctx, filter, update)
+	// validate collectionName against a whitelist
+	if !m.validCollections[collectionName] {
+		return 0, fmt.Errorf("MongoDBClient: Invalid collection name: %s", collectionName)
+	}
+	// check collectionName to ensure it is not empty
+	if collectionName == "" {
+		return 0, fmt.Errorf("MongoDBClient: Collection name cannot be empty")
+	}
+
+	// sanitize filter and update to prevent noSQL injection
+	sanitizedFilter := m.sanitizeDocument(filter)
+	sanitizedUpdate := m.sanitizeDocument(update)
+
+	res, err := m.db.Collection(collectionName).UpdateOne(ctx, sanitizedFilter, sanitizedUpdate)
 	if err != nil {
-		return 0, fmt.Errorf("MongoDBClient: Failed updating one in %s with filter %v, update %v: %v", collectionName, filter, update, err)
+		return 0, fmt.Errorf("MongoDBClient: Failed updating one in %s with filter %v, update %v: %v", collectionName, sanitizedFilter, sanitizedUpdate, err)
 	}
 
 	return res.ModifiedCount, nil
@@ -200,9 +254,21 @@ func (m *MongoDBClient) UpdateOne(ctx context.Context, collectionName string, fi
 func (m *MongoDBClient) DeleteOne(ctx context.Context, collectionName string, filter interfaces.Document) (int64, error) {
 	fmt.Printf("MongoDBClient: Deleting one from %s with filter %v\n", collectionName, filter)
 
-	res, err := m.db.Collection(collectionName).DeleteOne(ctx, filter)
+	// validate collectionName against a whitelist
+	if !m.validCollections[collectionName] {
+		return 0, fmt.Errorf("MongoDBClient: Invalid collection name: %s", collectionName)
+	}
+	// check collectionName to ensure it is not empty
+	if collectionName == "" {
+		return 0, fmt.Errorf("MongoDBClient: Collection name cannot be empty")
+	}
+
+	// sanitize filter to prevent noSQL injection
+	sanitizedFilter := m.sanitizeDocument(filter)
+
+	res, err := m.db.Collection(collectionName).DeleteOne(ctx, sanitizedFilter)
 	if err != nil {
-		return 0, fmt.Errorf("MongoDBClient: Failed deleting one from %s with filter %v: %v", collectionName, filter, err)
+		return 0, fmt.Errorf("MongoDBClient: Failed deleting one from %s with filter %v: %v", collectionName, sanitizedFilter, err)
 	}
 
 	return res.DeletedCount, nil
@@ -214,9 +280,21 @@ func (m *MongoDBClient) DeleteOne(ctx context.Context, collectionName string, fi
 func (m *MongoDBClient) DeleteMany(ctx context.Context, collectionName string, filter interfaces.Document) (int64, error) {
 	fmt.Printf("MongoDBClient: Deleting many from %s with filter %v\n", collectionName, filter)
 
-	res, err := m.db.Collection(collectionName).DeleteMany(ctx, filter)
+	// validate collectionName against a whitelist
+	if !m.validCollections[collectionName] {
+		return 0, fmt.Errorf("MongoDBClient: Invalid collection name: %s", collectionName)
+	}
+	// check collectionName to ensure it is not empty
+	if collectionName == "" {
+		return 0, fmt.Errorf("MongoDBClient: Collection name cannot be empty")
+	}
+
+	// sanitize filter to prevent noSQL injection
+	sanitizedFilter := m.sanitizeDocument(filter)
+
+	res, err := m.db.Collection(collectionName).DeleteMany(ctx, sanitizedFilter)
 	if err != nil {
-		return 0, fmt.Errorf("MongoDBClient: Failed Deleting many from %s with filter %v: %v", collectionName, filter, err)
+		return 0, fmt.Errorf("MongoDBClient: Failed Deleting many from %s with filter %v: %v", collectionName, sanitizedFilter, err)
 	}
 
 	return res.DeletedCount, nil
@@ -283,4 +361,43 @@ func (m *MongoDBClient) EnsureSchema(ctx context.Context, collectionName string,
 	collection := m.db.Collection(collectionName)
 	_, err := collection.Indexes().CreateOne(ctx, model)
 	return err
+}
+
+// SanitizeDocument ensures that the document does not contain any malicious content.
+// It checks for the presence of the ID field and removes it if found.
+// It also checks for any special characters in the keys that could lead to NoSQL injection attacks.
+func (m *MongoDBClient) sanitizeDocument(document interfaces.Document) interfaces.Document {
+	fmt.Println("MongoDBClient: Sanitizing document...")
+
+	// Ensure the document is not nil
+	if document == nil {
+		return nil
+	}
+
+	// Create a sanitized copy of the document
+	sanitized := make(map[string]interface{})
+	// Assert that document is a map[string]interface{} before iterating
+	docMap, ok := document.(map[string]interface{}) // bson.M is a type alias for map[string]interface{}
+	if !ok {
+		fmt.Println("MongoDBClient: Document is not of type map[string]interface{}, cannot sanitize")
+		return nil
+	}
+
+	for key, value := range docMap {
+		// Skip the ID field to prevent overwriting or exposing it
+		if key == IDFIELD {
+			continue
+		}
+
+		// Ensure the key is a valid field name and does not contain special characters
+		if _, ok := m.validFields[key]; !ok || strings.ContainsAny(key, "$.") {
+			fmt.Printf("MongoDBClient: Skipping invalid or unsafe field name: %s\n", key)
+			continue
+		}
+
+		// Add the sanitized key-value pair to the sanitized document
+		sanitized[key] = value
+	}
+
+	return sanitized
 }

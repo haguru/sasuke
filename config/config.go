@@ -32,11 +32,13 @@ type Database struct {
 
 // Database holds the database configuration.
 type MongoDBConfig struct {
-	Host         string             `yaml:"host" validate:"required"`
-	DatabaseName string             `yaml:"database_name" validate:"required"`
-	Port         int                `yaml:"port" validate:"required"`
-	Timeout      time.Duration      `yaml:"timeout"`
-	Options      MongoServerOptions `yaml:"mongo_server_options"`
+	Host             string             `yaml:"host" validate:"required"`
+	DatabaseName     string             `yaml:"database_name" validate:"required"`
+	Port             int                `yaml:"port" validate:"required"`
+	Timeout          time.Duration      `yaml:"timeout"`
+	Options          MongoServerOptions `yaml:"mongo_server_options"`
+	ValidCollections []string           `yaml:"valid_collections" validate:"required"`
+	ValidFields      []string           `yaml:"valid_fields" validate:"required"`
 }
 
 type PostgresConfig struct {
@@ -44,6 +46,8 @@ type PostgresConfig struct {
 	Port         int                   `yaml:"port" validate:"required"`
 	DatabaseName string                `yaml:"database_name" validate:"required"`
 	Options      PostgresServerOptions `yaml:"postgres_server_options"`
+	ValidTables  []string              `yaml:"valid_tables" validate:"required"`
+	ValidFields  []string              `yaml:"valid_fields" validate:"required"`
 }
 
 type MongoServerOptions struct {
@@ -56,6 +60,10 @@ type PostgresServerOptions struct {
 	MaxOpenConns    int           `yaml:"max_open_conns"`
 	MaxIdleConns    int           `yaml:"max_idle_conns"`
 	ConnMaxLifetime time.Duration `yaml:"conn_max_lifetime"`
+}
+
+type ValidFields struct {
+	Fields []string `yaml:"fields" validate:"required"`
 }
 
 // ReadLocalConfig reads the service configuration from a YAML file at the specified path.
@@ -83,4 +91,12 @@ func BuildServerAPIOptions(cfg MongoServerOptions) *options.ServerAPIOptions {
 	opts.SetDeprecationErrors(cfg.SetDeprecationErrors)
 
 	return opts
+}
+
+func ListToMap(list []string) map[string]bool {
+	result := make(map[string]bool)
+	for _, item := range list {
+		result[item] = true
+	}
+	return result
 }
