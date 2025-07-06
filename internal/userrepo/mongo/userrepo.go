@@ -17,6 +17,10 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+const (
+	MAXLENGTH_USERNAME = 64 // Maximum length for username
+)
+
 // MongoUserRepository implements UserRepository using the generic DBClient.
 type MongoUserRepository struct {
 	dbClient interfaces.DBClient // Here we use the concrete Mongo implementation of DBClient
@@ -66,6 +70,11 @@ func (r *MongoUserRepository) AddUser(ctx context.Context, user models.User) (st
 
 // GetUserByUsername retrieves a user from MongoDB via DBClient.
 func (r *MongoUserRepository) GetUserByUsername(ctx context.Context, username string) (*models.User, error) {
+	// Validate the username
+	if len(username) == 0 || len(username) > MAXLENGTH_USERNAME {
+		return nil, fmt.Errorf("invalid username: must be between 1 and %d characters", MAXLENGTH_USERNAME)
+	}
+
 	var mongoUser struct { // Temporary struct to decode MongoDB BSON
 		ID       primitive.ObjectID `bson:"_id,omitempty"`
 		Username string             `bson:"username"`
