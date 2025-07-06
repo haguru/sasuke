@@ -6,10 +6,9 @@ import (
 
 // Metrics struct defines the structure for the metrics collector
 type Metrics struct {
-	Registry           *prometheus.Registry
-	CreateRequests       prometheus.Counter
-	CreateErrors		 prometheus.Counter
-	
+	Registry       *prometheus.Registry
+	CreateRequests prometheus.Counter
+	CreateErrors   prometheus.Counter
 }
 
 // NewMetrics creates a new Metrics instance
@@ -35,9 +34,8 @@ func NewMetrics(serviceName string) *Metrics {
 	registry.MustRegister(createRequests, createErrors)
 
 	return &Metrics{
-		Registry:           registry,
-		CreateRequests:       createRequests,
-		CreateErrors:         createErrors,
+		Registry:       registry,
+		CreateRequests: createRequests,
+		CreateErrors:   createErrors,
 	}
 }
-

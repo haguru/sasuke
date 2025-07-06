@@ -30,8 +30,6 @@ type MongoDBClient struct {
 	timeout    time.Duration
 }
 
-
-
 // NewMongoDB returns a interface for db client and error if it occurs
 func NewMongoDB(timeout time.Duration, opts *options.ServerAPIOptions) (interfaces.DBClient, error) {
 	db := &MongoDBClient{
@@ -228,7 +226,7 @@ func (m *MongoDBClient) DeleteMany(ctx context.Context, collectionName string, f
 // It takes a context for cancellation and timeouts.
 func (m *MongoDBClient) Ping(ctx context.Context) error {
 	fmt.Println("MongoDBClient: Pinging...")
-	return m.client.Ping(ctx,nil)
+	return m.client.Ping(ctx, nil)
 }
 
 // getDBNameFromMongoDSN extracts the database name from a MongoDB DSN (Data Source Name).
@@ -270,7 +268,7 @@ func (m *MongoDBClient) EnsureSchema(ctx context.Context, collectionName string,
 	if m.db == nil {
 		return fmt.Errorf("MongoDBClient is not connected to a database")
 	}
-	
+
 	// Ensure schema is a mongo.IndexModel
 	if schema == nil {
 		return fmt.Errorf("EnsureSchema expects schema to be a mongo.IndexModel")
