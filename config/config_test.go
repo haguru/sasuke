@@ -52,8 +52,7 @@ func TestReadLocalConfig(t *testing.T) {
 				Database: Database{
 					Type: "mongo",
 					MongoDB: MongoDBConfig{
-						Host:             "localhost",
-						Port:             27017,
+						DSN:              "mongodb://localhost:27017/sasukeDB",
 						DatabaseName:     "sasukeDB",
 						Timeout:          10 * time.Second,
 						ValidCollections: []string{"users"},

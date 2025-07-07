@@ -32,9 +32,8 @@ type Database struct {
 
 // Database holds the database configuration.
 type MongoDBConfig struct {
-	Host             string             `yaml:"host" validate:"required"`
+	DSN              string             `yaml:"dsn" validate:"required"`
 	DatabaseName     string             `yaml:"database_name" validate:"required"`
-	Port             int                `yaml:"port" validate:"required"`
 	Timeout          time.Duration      `yaml:"timeout"`
 	Options          MongoServerOptions `yaml:"mongo_server_options"`
 	ValidCollections []string           `yaml:"valid_collections" validate:"required"`

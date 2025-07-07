@@ -20,7 +20,7 @@ jobs:
         uses: reviewdog/action-yamllint@v1.21.0
         with:
           github_token: ${{ secrets.github_token }}
-          reporter: github-pr-review # Change reporter.
+          reporter: github-pr-review 
 
       - name: golangci-lint
         uses: reviewdog/action-golangci-lint@v2.8.0
@@ -31,5 +31,5 @@ jobs:
       - name: hadolint
         uses: reviewdog/action-hadolint@v1.50.2
         with:
-          reporter: github-pr-review # Default is github-pr-check
+          reporter: github-pr-review 
       
