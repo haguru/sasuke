@@ -22,9 +22,6 @@ const (
 
 // MongoDBClient implements the interfaces.DBClient interface for MongoDB operations.
 type MongoDBClient struct {
-	Uri              string
-	Host             string
-	Port             int
 	ServerOpts       *options.ServerAPIOptions
 	client           *mongo.Client
 	db               *mongo.Database
@@ -51,6 +48,14 @@ func NewMongoDB(dbConfig *config.MongoDBConfig) (interfaces.DBClient, error) {
 // The function extracts the database name from the DSN and sets it as the active database for the client.
 func (m *MongoDBClient) Connect(ctx context.Context, dsn string) error {
 	fmt.Printf("MongoDBClient: Connecting to %s...\n", dsn)
+
+	// Validate the DSN format
+	if dsn == "" {
+		return fmt.Errorf("MongoDBClient: DSN is empty")
+	}
+	if !strings.HasPrefix(dsn, "mongodb://") && !strings.HasPrefix(dsn, "mongodb+srv://") {
+		return fmt.Errorf("MongoDBClient: Invalid DSN format, expected 'mongodb://' or 'mongodb+srv://'")
+	}
 
 	// Set a timeout for the connection
 	if m.timeout > 0 {

@@ -8,7 +8,6 @@ import (
 	"github.com/haguru/sasuke/config"
 	"github.com/haguru/sasuke/internal/auth"
 	"github.com/haguru/sasuke/internal/interfaces"
-	"github.com/haguru/sasuke/internal/metrics"
 	"github.com/haguru/sasuke/internal/routes"
 	"github.com/haguru/sasuke/internal/server"
 	mongoUserRepo "github.com/haguru/sasuke/internal/userrepo/mongo"
@@ -16,29 +15,21 @@ import (
 	"github.com/haguru/sasuke/internal/userservice"
 	"github.com/haguru/sasuke/pkg/databases/mongo"
 	"github.com/haguru/sasuke/pkg/databases/postgres"
+	"github.com/haguru/sasuke/pkg/metrics"
 
 	structValidator "github.com/go-playground/validator/v10"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// App struct represents the main application structure.
-// It contains the server instance and configuration settings.
-// The server instance is used to handle HTTP requests and routes.
-// The configuration settings are loaded from a local configuration file.
-// The App struct is designed to be initialized with a configuration file path,
-// which is read and validated during the initialization process.
-// The App struct also includes methods for starting the server and handling routes.
+// App represents the main application, containing server and configuration.
+// It initializes with a config file, validates settings, and manages routes.
 type App struct {
-	Server interfaces.Server // Placeholder for server interface
-	Config *config.ServiceConfig
+	Server     interfaces.Server
+	Config     *config.ServiceConfig
+	privateKey *ecdsa.PrivateKey
 }
 
-// NewApp initializes a new App instance with the provided configuration path.
-// It reads the configuration from the specified path, validates it,
-// and sets up the server and routes.
-// If the configuration is invalid or the server fails to start,
-// it returns an error.
-// The function also initializes metrics and adds routes for handling HTTP requests.
+// NewApp creates and configures a new App instance.
 func NewApp(configPath string) (*App, error) {
 	cfg, err := config.ReadLocalConfig(configPath)
 	if err != nil {
@@ -56,102 +47,52 @@ func NewApp(configPath string) (*App, error) {
 		errors := err.(structValidator.ValidationErrors)
 		return nil, fmt.Errorf("validation error: %s", errors)
 	}
-	// Initialize server, database, and metrics here if needed
+
+	// Initialize server, database, and metrics
 	serverInstance := server.NewServer(cfg.Host, cfg.Port)
 	app.Server = serverInstance
 
-	// initialize metrics
-	metricsInstance := metrics.NewMetrics(cfg.ServiceName)
+	metricsInstance := app.initializeMetrics()
 
-	// check if cfg.PrivateKeyPath is provided
-	if cfg.PrivateKeyPath == "" {
-		return nil, fmt.Errorf("private key path is not provided in the configuration")
+	if err := app.initializePrivateKey(); err != nil {
+		return nil, fmt.Errorf("failed to initialize private key: %v", err)
 	}
 
-	// Load or generate your ECDSA private key here
-	var privateKey *ecdsa.PrivateKey
-	privateKey, err = auth.LoadECDSAPrivateKey(cfg.PrivateKeyPath)
+	dbClient, err := app.initializeDBClient()
 	if err != nil {
-		return nil, fmt.Errorf("failed to load private key: %v", err)
+		return nil, fmt.Errorf("failed to initialize database client: %v", err)
 	}
 
-	// initalize db client
-	var dbClient interfaces.DBClient
-	var userRepo interfaces.UserRepository
-	switch cfg.Database.Type {
-	case "mongo":
-		// Initialize MongoDB client
-		dbClient, err = mongo.NewMongoDB(&cfg.Database.MongoDB)
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize MongoDB client: %v", err)
-		}
-		// Ensure the MongoDB client is connected
-		dsn := fmt.Sprintf("mongodb://%s:%d/%s", cfg.Database.MongoDB.Host, cfg.Database.MongoDB.Port, cfg.Database.MongoDB.DatabaseName)
-		if err = dbClient.Connect(context.Background(), dsn); err != nil {
-			return nil, fmt.Errorf("failed to connect to MongoDB: %v", err)
-		}
-
-		// initialize MongoDB repository
-		userRepo, err = mongoUserRepo.NewMongoUserRepository(dbClient)
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize MongoDB repository: %v", err)
-		}
-
-	case "postgres":
-		// Create PostgreSQL database client
-		dbClient = postgres.NewPostgresDatabaseClient(&cfg.Database.Postgres)
-
-		// // Ensure the PostgreSQL client is connected
-		// dsn := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s sslmode=disable",
-		// 	cfg.Database.Postgres.Host,
-		// 	cfg.Database.Postgres.Port,
-		// 	cfg.Database.Postgres.DatabaseName,
-		// 	cfg.Database.Postgres.User,
-		// 	cfg.Database.Postgres.Password,
-		// )
-		// initialize PostgreSQL repository
-		userRepo, err = postgresUserRepo.NewPostgresUserRepository(dbClient)
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize PostgreSQL repository: %v", err)
-		}
-
-	default:
-		return nil, fmt.Errorf("unsupported database type: %s", cfg.Database.Type)
+	userRepo, err := app.initializeUserRepo(dbClient)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize user repository: %v", err)
 	}
 
-	// Ensure indices for MongoDB or PostgreSQL
-	if err = userRepo.EnsureIndices(context.Background()); err != nil { // Ensure indices are created
-		return nil, fmt.Errorf("failed to ensure indices: %v", err)
-	}
-
-	// create user service
 	userService := userservice.NewUserService(userRepo)
 
-	// create for route
-	route := routes.NewRoute(metricsInstance, userService, privateKey, validator)
+	route := routes.NewRoute(metricsInstance, userService, app.privateKey, validator)
 
-	// metrics route
-	metricsHandler := promhttp.Handler().ServeHTTP
+	metricsHandler := promhttp.HandlerFor(
+		metricsInstance.GetRegistry(),
+		promhttp.HandlerOpts{}).ServeHTTP
+
 	err = app.Server.AddRoute(routes.MetricsRouteAPI, metricsHandler)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add metrics route: %v", err)
 	}
 
-	// Add create route
 	err = app.Server.AddRoute(routes.CreateRouteAPI, route.Create)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add create route: %v", err)
 	}
 	fmt.Println("Create route added successfully")
 
-	// Add signup route
 	err = app.Server.AddRoute(routes.SignupRouteAPI, route.Signup)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add signup route: %v", err)
 	}
 	fmt.Println("Signup route added successfully")
 
-	// Add login route
 	err = app.Server.AddRoute(routes.LoginRouteAPI, route.Login)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add login route: %v", err)
@@ -167,5 +108,99 @@ func (app *App) Run() error {
 		return fmt.Errorf("failed to start server: %v", err)
 	}
 
+	return nil
+}
+
+func (app *App) initializeMetrics() interfaces.Metrics {
+	appMetrics := metrics.NewMetrics(app.Config.ServiceName)
+	appMetrics.RegisterCounter(routes.SignupRequestsTotal, routes.SignupRequestsTotalHelp)
+	appMetrics.RegisterCounter(routes.SignupSuccessTotal, routes.SignupSuccessTotalHelp)
+	appMetrics.RegisterCounter(routes.SignupErrorsTotal, routes.SignupErrorsTotalHelp)
+	appMetrics.RegisterHistogram(
+		routes.SignupDurationSeconds,
+		routes.SignupDurationSecondsHelp,
+		routes.SignupDurationSecondsBuckets)
+
+	appMetrics.RegisterCounter(routes.LoginRequestsTotal, routes.LoginRequestsTotalHelp)
+	appMetrics.RegisterCounter(routes.LoginSuccessTotal, routes.LoginSuccessTotalHelp)
+	appMetrics.RegisterCounter(routes.LoginFailedTotal, routes.LoginFailedTotalHelp)
+	appMetrics.RegisterHistogram(
+		routes.LoginDurationSeconds,
+		routes.LoginDurationSecondsHelp,
+		routes.LoginDurationSecondsBuckets)
+
+	return appMetrics
+}
+
+func (app *App) initializeDBClient() (interfaces.DBClient, error) {
+	var dbClient interfaces.DBClient
+	var err error
+
+	switch app.Config.Database.Type {
+	case "mongo":
+		// Initialize MongoDB client
+		dbClient, err = mongo.NewMongoDB(&app.Config.Database.MongoDB)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize MongoDB client: %v", err)
+		}
+
+		// Ensure the MongoDB client is connected
+		if err = dbClient.Connect(context.Background(), app.Config.Database.MongoDB.DSN); err != nil {
+			return nil, fmt.Errorf("failed to connect to MongoDB: %v", err)
+		}
+
+	case "postgres":
+		// Create PostgreSQL database client
+		dbClient = postgres.NewPostgresDatabaseClient(&app.Config.Database.Postgres)
+
+	default:
+		return nil, fmt.Errorf("unsupported database type: %s", app.Config.Database.Type)
+	}
+
+	return dbClient, nil
+}
+
+func (app *App) initializeUserRepo(dbClient interfaces.DBClient) (interfaces.UserRepository, error) {
+	var userRepo interfaces.UserRepository
+	var err error
+
+	switch app.Config.Database.Type {
+	case "mongo":
+		// Initialize MongoDB repository
+		userRepo, err = mongoUserRepo.NewMongoUserRepository(dbClient)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize MongoDB repository: %v", err)
+		}
+
+	case "postgres":
+		// Initialize PostgreSQL repository
+		userRepo, err = postgresUserRepo.NewPostgresUserRepository(dbClient)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize PostgreSQL repository: %v", err)
+		}
+
+	default:
+		return nil, fmt.Errorf("unsupported database type: %s", app.Config.Database.Type)
+	}
+
+	// Ensure indices for MongoDB or PostgreSQL
+	if err = userRepo.EnsureIndices(context.Background()); err != nil { // Ensure indices are created
+		return nil, fmt.Errorf("failed to ensure indices: %v", err)
+	}
+
+	return userRepo, nil
+}
+
+func (app *App) initializePrivateKey() error {
+	if app.Config.PrivateKeyPath == "" {
+		return fmt.Errorf("private key path is not provided in the configuration")
+	}
+
+	privateKey, err := auth.LoadECDSAPrivateKey(app.Config.PrivateKeyPath)
+	if err != nil {
+		return fmt.Errorf("failed to load private key: %v", err)
+	}
+
+	app.privateKey = privateKey
 	return nil
 }

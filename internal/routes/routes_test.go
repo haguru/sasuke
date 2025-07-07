@@ -17,7 +17,6 @@ import (
 	structValidator "github.com/go-playground/validator/v10"
 	"github.com/haguru/sasuke/internal/auth"
 	"github.com/haguru/sasuke/internal/interfaces/mocks"
-	"github.com/haguru/sasuke/internal/metrics"
 	"github.com/haguru/sasuke/internal/models"
 	"github.com/haguru/sasuke/internal/userservice"
 	"github.com/stretchr/testify/mock"
@@ -189,18 +188,22 @@ func TestRoute_Login(t *testing.T) {
 			UserRepo: userRepo, // Use a mock or a real implementation
 		}
 
-		// Set up expectations for the mock if needed
-
+		// Load the ECDSA private key for signing JWTs
 		privateKey, err := auth.LoadECDSAPrivateKey("validKey.pem") // Mock or set up your private key as needed
 		if err != nil {
 			t.Fatalf("Failed to load private key: %v", err)
 		}
+		mockedMetrics := mocks.NewMockMetrics(t)
+		mockedMetrics.On("IncCounter", mock.AnythingOfType("string")).Return().Maybe()
+		mockedMetrics.On("ObserveHistogram", mock.AnythingOfType("string"), mock.AnythingOfType("float64")).Return().Maybe()
+		// Create a new Route instance with the mock user service and private key
 		r := &Route{
-			Metrics:     &metrics.Metrics{},
+			Metrics:     mockedMetrics,
 			UserService: userService,
 			PrivateKey:  privateKey,
 			validator:   structValidator.New(),
 		}
+		// Call the Login method with the recorder and request
 		r.Login(rr, req)
 		if rr.Code != tt.wantStatusCode {
 			t.Errorf("%s: got status %d, want %d", tt.name, rr.Code, tt.wantStatusCode)
@@ -293,6 +296,7 @@ func TestRoute_Signup(t *testing.T) {
 		}
 		rr := httptest.NewRecorder()
 
+		// create a mock userrepository or use a real one if available
 		userRepo := mocks.NewMockUserRepository(t)
 		userRepo.On("AddUser", mock.Anything, mock.AnythingOfType("models.User")).
 			Return("", tt.userrepoError).Maybe()
@@ -301,12 +305,21 @@ func TestRoute_Signup(t *testing.T) {
 			UserRepo: userRepo,
 		}
 
+		// Load the ECDSA private key for signing JWTs
 		privateKey, err := auth.LoadECDSAPrivateKey("validKey.pem")
 		if err != nil {
 			t.Fatalf("Failed to load private key: %v", err)
 		}
+
+		// Create a mock metrics instance
+		// This is necessary to avoid nil pointer dereference in the Route methods
+		mockedMetrics := mocks.NewMockMetrics(t)
+		mockedMetrics.On("IncCounter", mock.AnythingOfType("string")).Return().Maybe()
+		mockedMetrics.On("ObserveHistogram", mock.AnythingOfType("string"), mock.AnythingOfType("float64")).Return().Maybe()
+
+		// Create a new Route instance with the mock user service and private key
 		r := &Route{
-			Metrics:     &metrics.Metrics{},
+			Metrics:     mockedMetrics,
 			UserService: userService,
 			PrivateKey:  privateKey,
 			validator:   structValidator.New(),

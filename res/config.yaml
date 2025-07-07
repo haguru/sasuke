@@ -6,8 +6,7 @@ private_key_path: ./res/sharingan_key.pem
 database:
   type: mongo
   mongodb_config:
-    host: localhost 
-    port: 27017 
+    dsn: "mongodb://localhost:27017/sasukeDB"
     database_name: sasukeDB
     timeout: 10s
     valid_collections:
