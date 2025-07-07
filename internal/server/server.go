@@ -26,6 +26,7 @@ func NewServer(host, port string) interfaces.Server {
 	mux := http.NewServeMux()
 	server := &http.Server{
 		Addr:         host + ":" + port,
+		Handler:      mux,
 		ReadTimeout:  ReadTimeout,
 		WriteTimeout: WriteTimeout,
 		IdleTimeout:  IdleTimeout,

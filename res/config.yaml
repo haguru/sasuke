@@ -10,6 +10,11 @@ database:
     port: 27017 
     database_name: sasukeDB
     timeout: 10s
+    valid_collections:
+      - users
+    valid_fields:
+      - username
+      - password
     mongo_server_options:
       api_version: 1
       set_strict: true

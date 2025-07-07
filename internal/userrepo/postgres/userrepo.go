@@ -87,9 +87,7 @@ func (r *PostgresUserRepository) GetUserByUsername(ctx context.Context, username
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user by username from PostgreSQL: %w", err)
 	}
-	if user.ID == "" { // If ID is empty after FindOne, it means no user was found.
-		return nil, nil
-	}
+
 	return &user, nil
 }
 

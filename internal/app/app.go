@@ -81,8 +81,7 @@ func NewApp(configPath string) (*App, error) {
 	switch cfg.Database.Type {
 	case "mongo":
 		// Initialize MongoDB client
-		serverOptions := config.BuildServerAPIOptions(cfg.Database.MongoDB.Options)
-		dbClient, err = mongo.NewMongoDB(cfg.Database.MongoDB.Timeout, serverOptions)
+		dbClient, err = mongo.NewMongoDB(&cfg.Database.MongoDB)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize MongoDB client: %v", err)
 		}
@@ -99,11 +98,8 @@ func NewApp(configPath string) (*App, error) {
 		}
 
 	case "postgres":
-		// Initialize PostgreSQL client
-		serverOptions := &cfg.Database.Postgres.Options
-
 		// Create PostgreSQL database client
-		dbClient = postgres.NewPostgresDatabaseClient(serverOptions.MaxOpenConns, serverOptions.MaxIdleConns, serverOptions.ConnMaxLifetime)
+		dbClient = postgres.NewPostgresDatabaseClient(&cfg.Database.Postgres)
 
 		// // Ensure the PostgreSQL client is connected
 		// dsn := fmt.Sprintf("host=%s port=%d dbname=%s user=%s password=%s sslmode=disable",
@@ -146,18 +142,21 @@ func NewApp(configPath string) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to add create route: %v", err)
 	}
+	fmt.Println("Create route added successfully")
 
 	// Add signup route
 	err = app.Server.AddRoute(routes.SignupRouteAPI, route.Signup)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add signup route: %v", err)
 	}
+	fmt.Println("Signup route added successfully")
 
 	// Add login route
 	err = app.Server.AddRoute(routes.LoginRouteAPI, route.Login)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add login route: %v", err)
 	}
+	fmt.Println("Login route added successfully")
 
 	return app, nil
 }

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/haguru/sasuke/config"
 	"github.com/haguru/sasuke/internal/interfaces"
 
 	"github.com/google/uuid"
@@ -20,23 +21,30 @@ const (
 	DefaultMaxIdleConns = 5
 	// DefaultConnMaxLifetime is the default maximum amount of time a connection may be reused.
 	DefaultConnMaxLifetime = 30 * time.Second
+
+	// IDFIELD is the name of the ID field in PostgreSQL documents.
+	IDFIELD = "id"
 )
 
 // PostgresDatabaseClient implements the DBClient interface for PostgreSQL databases.
 type PostgresDatabaseClient struct {
 	db              *sql.DB
-	Host            string        // Host is the PostgreSQL server host
-	Port            int           // Port is the PostgreSQL server port
-	MaxOpenConns    int           // MaxOpenConns is the maximum number of open connections to the database
-	MaxIdleConns    int           // MaxIdleConns is the maximum number of idle connections to the database
-	ConnMaxLifetime time.Duration // ConnMaxLifetime is the maximum amount of time a connection may
+	Host            string          // Host is the PostgreSQL server host
+	Port            int             // Port is the PostgreSQL server port
+	MaxOpenConns    int             // MaxOpenConns is the maximum number of open connections to the database
+	MaxIdleConns    int             // MaxIdleConns is the maximum number of idle connections to the database
+	ConnMaxLifetime time.Duration   // ConnMaxLifetime is the maximum amount of time a connection may
+	validColumns    map[string]bool // validColumns is a list of valid column names for sanitization
+	validTables     map[string]bool // validTables is a list of valid table names for sanitization
 }
 
-func NewPostgresDatabaseClient(maxOpenConns, maxIdleConns int, connMaxLifetime time.Duration) interfaces.DBClient {
+func NewPostgresDatabaseClient(dbConfig *config.PostgresConfig) interfaces.DBClient {
 	return &PostgresDatabaseClient{
-		MaxOpenConns:    maxOpenConns,
-		MaxIdleConns:    maxIdleConns,
-		ConnMaxLifetime: connMaxLifetime,
+		MaxOpenConns:    dbConfig.Options.MaxOpenConns,
+		MaxIdleConns:    dbConfig.Options.MaxIdleConns,
+		ConnMaxLifetime: dbConfig.Options.ConnMaxLifetime,
+		validColumns:    config.ListToMap(dbConfig.ValidFields),
+		validTables:     config.ListToMap(dbConfig.ValidTables),
 	}
 }
 
@@ -89,7 +97,7 @@ func (p *PostgresDatabaseClient) InsertOne(ctx context.Context, tableName string
 		i++
 	}
 
-	//This is a safe use of fmt.Sprintf for SQL query construction, as the table name is controlled and not user input.
+	// This is a safe use of fmt.Sprintf for SQL query construction, as the table name is controlled and not user input.
 	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s) RETURNING id",
 		tableName,
 		strings.Join(columns, ", "),
@@ -109,19 +117,26 @@ func (p *PostgresDatabaseClient) InsertOne(ctx context.Context, tableName string
 // 'result' is a pointer to a struct that the data will be scanned into.
 // It dynamically builds the SELECT and WHERE clauses and scans into the struct using reflection.
 func (p *PostgresDatabaseClient) FindOne(ctx context.Context, tableName string, filter interfaces.Document, result interfaces.Document) error {
-	filterMap, ok := filter.(map[string]interface{})
-	if !ok {
-		return fmt.Errorf("PostgreSQL FindOne expects filter to be map[string]interface{}")
+	// validate tableName against a whitelist p.validTables
+	if !p.validTables[tableName] {
+		return fmt.Errorf("invalid table name: %s", tableName)
 	}
-	if len(filterMap) == 0 {
+
+	// sanitize filterMap to ensure it does not contain any malicious content
+	sanitizedFilterMap, err := p.sanitizeDocument(filter)
+	if err != nil {
+		return fmt.Errorf("PostgreSQL FindOne failed to sanitize filter: %w", err)
+	}
+
+	if len(sanitizedFilterMap) == 0 {
 		return fmt.Errorf("PostgreSQL FindOne requires a non-empty filter")
 	}
 
 	// Build WHERE clause
-	whereClauses := make([]string, 0, len(filterMap))
-	whereValues := make([]interface{}, 0, len(filterMap))
+	whereClauses := make([]string, 0, len(sanitizedFilterMap))
+	whereValues := make([]any, 0, len(sanitizedFilterMap))
 	paramCount := 1
-	for col, val := range filterMap {
+	for col, val := range sanitizedFilterMap {
 		whereClauses = append(whereClauses, fmt.Sprintf("%s = $%d", col, paramCount))
 		whereValues = append(whereValues, val)
 		paramCount++
@@ -137,15 +152,15 @@ func (p *PostgresDatabaseClient) FindOne(ctx context.Context, tableName string, 
 	numFields := elem.NumField()
 
 	columns := make([]string, numFields)
-	fieldPointers := make([]interface{}, numFields) // Pointers to fields in the struct for Scan()
+	fieldPointers := make([]any, numFields) // Pointers to fields in the struct for Scan()
 
-	for i := 0; i < numFields; i++ {
+	for i := range columns {
 		field := elem.Type().Field(i)
 		columns[i] = strings.ToLower(field.Name) // Convert field name to snake_case or whatever your DB uses
 		fieldPointers[i] = elem.Field(i).Addr().Interface()
 	}
 
-	//This is a safe use of fmt.Sprintf for SQL query construction, as the table name is controlled and not user input.
+	// This is a safe use of fmt.Sprintf for SQL query construction, as the table name is controlled and not user input.
 	query := fmt.Sprintf("SELECT %s FROM %s WHERE %s LIMIT 1",
 		strings.Join(columns, ", "),
 		tableName,
@@ -153,7 +168,7 @@ func (p *PostgresDatabaseClient) FindOne(ctx context.Context, tableName string, 
 	) // #nosec G201
 
 	row := p.db.QueryRowContext(ctx, query, whereValues...)
-	err := row.Scan(fieldPointers...)
+	err = row.Scan(fieldPointers...)
 	if err == sql.ErrNoRows {
 		// Reset the struct if no rows found, so it doesn't contain partial data
 		reflect.New(elem.Type()).Elem().Set(elem)
@@ -166,15 +181,21 @@ func (p *PostgresDatabaseClient) FindOne(ctx context.Context, tableName string, 
 // 'filter' is expected to be a map[string]interface{}.
 // This implementation returns a slice of map[string]interface{}
 func (p *PostgresDatabaseClient) FindMany(ctx context.Context, tableName string, filter interfaces.Document) ([]interfaces.Document, error) {
-	filterMap, ok := filter.(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("PostgreSQL FindMany expects filter to be map[string]interface{}")
+	// validate tableName against a whitelist p.validTables
+	if !p.validTables[tableName] {
+		return nil, fmt.Errorf("invalid table name: %s", tableName)
 	}
 
-	whereClauses := make([]string, 0, len(filterMap))
-	whereValues := make([]interface{}, 0, len(filterMap))
+	// sanitize filterMap to ensure it does not contain any malicious content
+	sanitizedFilterMap, err := p.sanitizeDocument(filter)
+	if err != nil {
+		return nil, fmt.Errorf("PostgreSQL FindMany failed to sanitize filter: %w", err)
+	}
+
+	whereClauses := make([]string, 0, len(sanitizedFilterMap))
+	whereValues := make([]interface{}, 0, len(sanitizedFilterMap))
 	paramCount := 1
-	for col, val := range filterMap {
+	for col, val := range sanitizedFilterMap {
 		whereClauses = append(whereClauses, fmt.Sprintf("%s = $%d", col, paramCount))
 		whereValues = append(whereValues, val)
 		paramCount++
@@ -185,7 +206,7 @@ func (p *PostgresDatabaseClient) FindMany(ctx context.Context, tableName string,
 	}
 
 	// This assumes you want all columns. For specific columns, you'd need another argument.
-	//This is a safe use of fmt.Sprintf for SQL query construction, as the table name is controlled and not user input.
+	// This is a safe use of fmt.Sprintf for SQL query construction, as the table name is controlled and not user input.
 	query := fmt.Sprintf("SELECT * FROM %s%s", tableName, whereString) // #nosec G201
 
 	rows, err := p.db.QueryContext(ctx, query, whereValues...)
@@ -236,33 +257,41 @@ func (p *PostgresDatabaseClient) FindMany(ctx context.Context, tableName string,
 // UpdateOne updates a single document in a PostgreSQL table.
 // 'filter' and 'update' are expected to be map[string]interface{}.
 func (p *PostgresDatabaseClient) UpdateOne(ctx context.Context, tableName string, filter interfaces.Document, update interfaces.Document) (int64, error) {
-	filterMap, ok := filter.(map[string]interface{})
-	if !ok {
-		return 0, fmt.Errorf("PostgreSQL UpdateOne expects filter to be map[string]interface{}")
-	}
-	updateMap, ok := update.(map[string]interface{})
-	if !ok {
-		return 0, fmt.Errorf("PostgreSQL UpdateOne expects update to be map[string]interface{}")
+	// validate tableName against a whitelist p.validTables
+	if !p.validTables[tableName] {
+		return 0, fmt.Errorf("invalid table name: %s", tableName)
 	}
 
-	setClauses := make([]string, 0, len(updateMap))
-	whereClauses := make([]string, 0, len(filterMap))
-	values := make([]interface{}, 0, len(updateMap)+len(filterMap))
+	// sanitize filterMap to ensure it does not contain any malicious content
+	sanitizedFilterMap, err := p.sanitizeDocument(filter)
+	if err != nil {
+		return 0, fmt.Errorf("PostgreSQL FindMany failed to sanitize filter: %w", err)
+	}
+
+	// sanitize updateMap to ensure it does not contain any malicious content
+	sanitizedUpdateMap, err := p.sanitizeDocument(update)
+	if err != nil {
+		return 0, fmt.Errorf("PostgreSQL UpdateOne failed to sanitize update: %w", err)
+	}
+
+	setClauses := make([]string, 0, len(sanitizedUpdateMap))
+	whereClauses := make([]string, 0, len(sanitizedFilterMap))
+	values := make([]interface{}, 0, len(sanitizedUpdateMap)+len(sanitizedFilterMap))
 	paramCount := 1
 
-	for col, val := range updateMap {
+	for col, val := range sanitizedUpdateMap {
 		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", col, paramCount))
 		values = append(values, val)
 		paramCount++
 	}
 
-	for col, val := range filterMap {
+	for col, val := range sanitizedFilterMap {
 		whereClauses = append(whereClauses, fmt.Sprintf("%s = $%d", col, paramCount))
 		values = append(values, val)
 		paramCount++
 	}
 
-	//This is a safe use of fmt.Sprintf for SQL query construction, as the table name is controlled and not user input.
+	// This is a safe use of fmt.Sprintf for SQL query construction, as the table name is controlled and not user input.
 	query := fmt.Sprintf("UPDATE %s SET %s WHERE %s",
 		tableName,
 		strings.Join(setClauses, ", "),
@@ -283,21 +312,27 @@ func (p *PostgresDatabaseClient) UpdateOne(ctx context.Context, tableName string
 // DeleteOne deletes a single document from a PostgreSQL table.
 // 'filter' is expected to be a map[string]interface{}.
 func (p *PostgresDatabaseClient) DeleteOne(ctx context.Context, tableName string, filter interfaces.Document) (int64, error) {
-	filterMap, ok := filter.(map[string]interface{})
-	if !ok {
-		return 0, fmt.Errorf("PostgreSQL DeleteOne expects filter to be map[string]interface{}")
+	// validate tableName against a whitelist p.validTables
+	if !p.validTables[tableName] {
+		return 0, fmt.Errorf("invalid table name: %s", tableName)
 	}
 
-	whereClauses := make([]string, 0, len(filterMap))
-	whereValues := make([]interface{}, 0, len(filterMap))
+	// sanitize filterMap to ensure it does not contain any malicious content
+	sanitizedFilterMap, err := p.sanitizeDocument(filter)
+	if err != nil {
+		return 0, fmt.Errorf("PostgreSQL FindMany failed to sanitize filter: %w", err)
+	}
+
+	whereClauses := make([]string, 0, len(sanitizedFilterMap))
+	whereValues := make([]interface{}, 0, len(sanitizedFilterMap))
 	paramCount := 1
-	for col, val := range filterMap {
+	for col, val := range sanitizedFilterMap {
 		whereClauses = append(whereClauses, fmt.Sprintf("%s = $%d", col, paramCount))
 		whereValues = append(whereValues, val)
 		paramCount++
 	}
 
-	//This is a safe use of fmt.Sprintf for SQL query construction, as the table name is controlled and not user input.
+	// This is a safe use of fmt.Sprintf for SQL query construction, as the table name is controlled and not user input.
 	query := fmt.Sprintf("DELETE FROM %s WHERE %s",
 		tableName,
 		strings.Join(whereClauses, " AND "),
@@ -317,15 +352,21 @@ func (p *PostgresDatabaseClient) DeleteOne(ctx context.Context, tableName string
 // DeleteMany deletes multiple documents from a PostgreSQL table.
 // 'filter' is expected to be a map[string]interface{}.
 func (p *PostgresDatabaseClient) DeleteMany(ctx context.Context, tableName string, filter interfaces.Document) (int64, error) {
-	filterMap, ok := filter.(map[string]interface{})
-	if !ok {
-		return 0, fmt.Errorf("PostgreSQL DeleteMany expects filter to be map[string]interface{}")
+	// validate tableName against a whitelist p.validTables
+	if !p.validTables[tableName] {
+		return 0, fmt.Errorf("invalid table name: %s", tableName)
 	}
 
-	whereClauses := make([]string, 0, len(filterMap))
-	whereValues := make([]interface{}, 0, len(filterMap))
+	// sanitize filterMap to ensure it does not contain any malicious content
+	sanitizedFilterMap, err := p.sanitizeDocument(filter)
+	if err != nil {
+		return 0, fmt.Errorf("PostgreSQL FindMany failed to sanitize filter: %w", err)
+	}
+
+	whereClauses := make([]string, 0, len(sanitizedFilterMap))
+	whereValues := make([]interface{}, 0, len(sanitizedFilterMap))
 	paramCount := 1
-	for col, val := range filterMap {
+	for col, val := range sanitizedFilterMap {
 		whereClauses = append(whereClauses, fmt.Sprintf("%s = $%d", col, paramCount))
 		whereValues = append(whereValues, val)
 		paramCount++
@@ -336,8 +377,8 @@ func (p *PostgresDatabaseClient) DeleteMany(ctx context.Context, tableName strin
 		whereString = " WHERE " + strings.Join(whereClauses, " AND ")
 	}
 
-	//This is a safe use of fmt.Sprintf for SQL query construction, as the table name is controlled and not user input.
-	query := fmt.Sprintf("DELETE FROM %s%s", tableName, whereString) // #nosec G201
+	// This is a safe use of fmt.Sprintf for SQL query construction, as the table name is controlled and not user input.
+	query := fmt.Sprintf("DELETE FROM %s%s RETURNING id", tableName, whereString) // #nosec G201
 
 	res, err := p.db.ExecContext(ctx, query, whereValues...)
 	if err != nil {
@@ -375,4 +416,32 @@ func (p *PostgresDatabaseClient) EnsureSchema(ctx context.Context, tableName str
 	}
 	_, err := p.db.ExecContext(ctx, createStmt)
 	return err
+}
+
+// SanitizeDocument ensures that the document does not contain any malicious content.
+// It checks for the presence of the ID field and removes it if found.
+// It also checks for any special characters in the keys that could lead to SQL injection attacks.
+func (p *PostgresDatabaseClient) sanitizeDocument(document interfaces.Document) (map[string]interface{}, error) {
+	// Check if the document is nil
+	if document == nil {
+		return nil, fmt.Errorf("PostgreSQL SanitizeDocument: Document is nil")
+	}
+
+	docMap, ok := document.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("PostgreSQL SanitizeDocument expects document to be map[string]interface{}")
+	}
+
+	// Remove the ID field if present
+	delete(docMap, IDFIELD)
+
+	// Sanitize keys to prevent SQL injection and check for valid columns
+	for key := range docMap {
+		if strings.ContainsAny(key, "();--") || !p.validColumns[key] {
+			fmt.Printf("PostgreSQL SanitizeDocument: Detected invalid or malicious key: %s\n", key)
+			delete(docMap, key)
+		}
+	}
+
+	return docMap, nil
 }
