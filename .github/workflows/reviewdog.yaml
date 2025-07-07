@@ -1,5 +1,7 @@
 name: reviewdog
 on: [pull_request]
+permissions:
+  contents: read
 env:
   REVIEWDOG_FAIL_ON_ERROR: 'true'
 jobs:
