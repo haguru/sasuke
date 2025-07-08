@@ -29,8 +29,8 @@ func (s *UserService) RegisterUser(ctx context.Context, username, password strin
 	}
 
 	user := models.User{
-		Username: username,
-		Password: string(hashedPassword), // Pass hashed password to repository
+		Username:       username,
+		HashedPassword: string(hashedPassword), // Pass hashed password to repository
 	}
 
 	userID, err := s.UserRepo.AddUser(ctx, user)
@@ -51,7 +51,7 @@ func (s *UserService) AuthenticateUser(ctx context.Context, username, password s
 		return false, fmt.Errorf("user not found")
 	}
 
-	err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password))
+	err = bcrypt.CompareHashAndPassword([]byte(user.HashedPassword), []byte(password))
 	if err != nil {
 		return false, fmt.Errorf("invalid password")
 	}

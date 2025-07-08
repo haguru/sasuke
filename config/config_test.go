@@ -56,7 +56,7 @@ func TestReadLocalConfig(t *testing.T) {
 						DatabaseName:     "sasukeDB",
 						Timeout:          10 * time.Second,
 						ValidCollections: []string{"users"},
-						ValidFields:      []string{"username", "password"},
+						ValidFields:      []string{"username", "hashed_password"},
 						Options: MongoServerOptions{
 							APIVersion:           "1",
 							SetStrict:            true,

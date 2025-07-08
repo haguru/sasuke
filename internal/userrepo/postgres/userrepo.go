@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/lib/pq" // PostgreSQL driver for database/sql
 
 	"github.com/haguru/sasuke/internal/interfaces"
@@ -12,8 +13,7 @@ import (
 	"github.com/haguru/sasuke/pkg/databases/postgres"
 )
 
-var (
-	ensureSchemaSQL = `
+var ensureSchemaSQL = `
 		CREATE TABLE IF NOT EXISTS users (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 			username TEXT NOT NULL UNIQUE,
@@ -21,7 +21,6 @@ var (
 		);
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users (username);
 	`
-)
 
 // PostgresUserRepository implements UserRepository for PostgreSQL databases.
 type PostgresUserRepository struct {
@@ -57,12 +56,13 @@ func NewPostgresUserRepository(dbClient interfaces.DBClient) (interfaces.UserRep
 // It returns the user's ID as a string if successful, or an error if the operation fails.
 func (r *PostgresUserRepository) AddUser(ctx context.Context, user models.User) (string, error) {
 	// Convert models.User struct to map[string]interface{} for the generic client
-	doc := map[string]interface{}{
-		"username": user.Username,
-		"password": user.Password,
+	doc := make(map[string]interface{})
+	err := mapstructure.Decode(user, &doc)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode user model: %w", err)
 	}
-	// The client's InsertOne will generate the ID if not present
 
+	// The client's InsertOne will generate the ID if not present
 	insertedID, err := r.dbClient.InsertOne(ctx, constants.UsersCollection, doc)
 	if err != nil {
 		// PostgreSQL specific duplicate key error check (example for `pq` driver)

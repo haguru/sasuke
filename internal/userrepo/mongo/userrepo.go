@@ -78,10 +78,7 @@ func (r *MongoUserRepository) GetUserByUsername(ctx context.Context, username st
 		return nil, fmt.Errorf("failed to get user by username from MongoDB: %w", err)
 	}
 
-	return &models.User{
-		Username: user.Username,
-		Password: user.Password,
-	}, nil
+	return &user, nil
 }
 
 // EnsureIndices creates unique indices for username in MongoDB (uses direct client helper).
