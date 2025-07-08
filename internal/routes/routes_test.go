@@ -176,8 +176,8 @@ func TestRoute_Login(t *testing.T) {
 		var returnedUser *models.User
 		if tt.wantStatusCode != http.StatusUnauthorized {
 			returnedUser = &models.User{
-				Username: username,
-				Password: hashedPassword,
+				Username:       username,
+				HashedPassword: hashedPassword,
 			}
 		}
 

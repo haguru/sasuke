@@ -9,7 +9,7 @@ import (
 
 	"github.com/haguru/sasuke/internal/auth"
 	"github.com/haguru/sasuke/internal/interfaces"
-	"github.com/haguru/sasuke/internal/models"
+	"github.com/haguru/sasuke/internal/models/dto"
 	"github.com/haguru/sasuke/internal/userservice"
 
 	structValidator "github.com/go-playground/validator/v10"
@@ -54,7 +54,7 @@ func (r *Route) Signup(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	signupRequest := &models.User{}
+	signupRequest := &dto.UserSignupRequestDTO{}
 	err := json.NewDecoder(req.Body).Decode(signupRequest)
 	if err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -96,8 +96,13 @@ func (r *Route) Signup(w http.ResponseWriter, req *http.Request) {
 
 	w.Header().Set(ContentType, ContentTypeJson)
 	w.WriteHeader(http.StatusCreated)
-	message := fmt.Sprintf("User created successfully with ID: %s", userID)
-	if err := json.NewEncoder(w).Encode(map[string]string{"message": message}); err != nil {
+
+	response := &dto.UserSignupResponseDTO{
+		Message: fmt.Sprintf("User created successfully with ID: %s", userID),
+		UserID:  userID,
+	}
+
+	if err := json.NewEncoder(w).Encode(response); err != nil {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		if r.Metrics != nil {
 			r.Metrics.IncCounter(SignupErrorsTotal)
@@ -128,7 +133,7 @@ func (r *Route) Login(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	loginRequest := &models.User{}
+	loginRequest := &dto.LoginRequestDTO{}
 	err := json.NewDecoder(req.Body).Decode(loginRequest)
 	if err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -190,7 +195,10 @@ func (r *Route) Login(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set(ContentType, ContentTypeJson)
 
 	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(map[string]string{"message": "Login successful"}); err != nil {
+	response := &dto.LoginResponseDTO{
+		Message: "Login successful",
+	}
+	if err := json.NewEncoder(w).Encode(response); err != nil {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		if r.Metrics != nil {
 			r.Metrics.IncCounter(LoginFailedTotal)
