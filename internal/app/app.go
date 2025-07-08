@@ -16,6 +16,7 @@ import (
 	"github.com/haguru/sasuke/pkg/databases/mongo"
 	"github.com/haguru/sasuke/pkg/databases/postgres"
 	"github.com/haguru/sasuke/pkg/metrics"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	structValidator "github.com/go-playground/validator/v10"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -74,9 +75,11 @@ func NewApp(configPath string) (*App, error) {
 
 	metricsHandler := promhttp.HandlerFor(
 		metricsInstance.GetRegistry(),
-		promhttp.HandlerOpts{}).ServeHTTP
+		promhttp.HandlerOpts{})
 
-	err = app.Server.AddRoute(routes.MetricsRouteAPI, metricsHandler)
+	tracedMetricsHandler := otelhttp.NewHandler(metricsHandler, routes.MetricsRouteAPI)
+
+	err = app.Server.AddRoute(routes.MetricsRouteAPI, tracedMetricsHandler.ServeHTTP)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add metrics route: %v", err)
 	}
