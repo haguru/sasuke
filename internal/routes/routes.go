@@ -38,7 +38,8 @@ func NewRoute(metrics interfaces.Metrics, userService *userservice.UserService,
 // Signup handles user signup requests.
 func (r *Route) Signup(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		r.errorResponse(w, fmt.Errorf("method %s not allowed", req.Method), "Method not allowed")
 		return
 	}
 
@@ -47,7 +48,8 @@ func (r *Route) Signup(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if req.Header.Get(ContentType) != ContentTypeJson {
-		http.Error(w, "Content-Type must be application/json", http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
+		r.errorResponse(w, fmt.Errorf("invalid content-type: %s", req.Header.Get(ContentType)), "Request Content-Type must be application/json")
 		if r.Metrics != nil {
 			r.Metrics.IncCounter(SignupErrorsTotal)
 		}
@@ -57,7 +59,8 @@ func (r *Route) Signup(w http.ResponseWriter, req *http.Request) {
 	signupRequest := &dto.UserSignupRequestDTO{}
 	err := json.NewDecoder(req.Body).Decode(signupRequest)
 	if err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
+		r.errorResponse(w, err, "Invalid request body")
 		if r.Metrics != nil {
 			r.Metrics.IncCounter(SignupErrorsTotal)
 		}
@@ -67,7 +70,8 @@ func (r *Route) Signup(w http.ResponseWriter, req *http.Request) {
 	if err := r.validator.Struct(signupRequest); err != nil {
 		// Validation failed, handle the error
 		errors := err.(structValidator.ValidationErrors)
-		http.Error(w, fmt.Sprintf("validation error: %s", errors), http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
+		r.errorResponse(w, fmt.Errorf("invalid signup data: %s", errors), "Signup data validation failed")
 		if r.Metrics != nil {
 			r.Metrics.IncCounter(SignupErrorsTotal)
 		}
@@ -81,7 +85,8 @@ func (r *Route) Signup(w http.ResponseWriter, req *http.Request) {
 
 	userID, err := r.UserService.RegisterUser(req.Context(), signupRequest.Username, signupRequest.Password)
 	if err != nil {
-		http.Error(w, "Failed to register user", http.StatusConflict)
+		w.WriteHeader(http.StatusConflict)
+		r.errorResponse(w, err, "Failed to register user")
 		if r.Metrics != nil {
 			r.Metrics.IncCounter(SignupErrorsTotal)
 		}
@@ -103,7 +108,8 @@ func (r *Route) Signup(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		w.WriteHeader(http.StatusInternalServerError)
+		r.errorResponse(w, err, "Failed to encode response")
 		if r.Metrics != nil {
 			r.Metrics.IncCounter(SignupErrorsTotal)
 		}
@@ -114,7 +120,8 @@ func (r *Route) Signup(w http.ResponseWriter, req *http.Request) {
 // Login handles user login requests.
 func (r *Route) Login(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		r.errorResponse(w, fmt.Errorf("method %s not allowed", req.Method), "Method not allowed")
 		if r.Metrics != nil {
 			r.Metrics.IncCounter(LoginFailedTotal)
 		}
@@ -126,7 +133,8 @@ func (r *Route) Login(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if req.Header.Get(ContentType) != ContentTypeJson {
-		http.Error(w, "Content-Type must be application/json", http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
+		r.errorResponse(w, fmt.Errorf("invalid content-type: %s", req.Header.Get(ContentType)), "Content-Type must be application/json")
 		if r.Metrics != nil {
 			r.Metrics.IncCounter(LoginFailedTotal)
 		}
@@ -136,7 +144,8 @@ func (r *Route) Login(w http.ResponseWriter, req *http.Request) {
 	loginRequest := &dto.LoginRequestDTO{}
 	err := json.NewDecoder(req.Body).Decode(loginRequest)
 	if err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
+		r.errorResponse(w, err, "Invalid request body")
 		if r.Metrics != nil {
 			r.Metrics.IncCounter(LoginFailedTotal)
 		}
@@ -146,7 +155,8 @@ func (r *Route) Login(w http.ResponseWriter, req *http.Request) {
 	if err := r.validator.Struct(loginRequest); err != nil {
 		// Validation failed, handle the error
 		errors := err.(structValidator.ValidationErrors)
-		http.Error(w, fmt.Sprintf("validation error: %s", errors), http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
+		r.errorResponse(w, fmt.Errorf("invalid login data: %s", errors), "Login data validation failed")
 		if r.Metrics != nil {
 			r.Metrics.IncCounter(LoginFailedTotal)
 		}
@@ -160,7 +170,9 @@ func (r *Route) Login(w http.ResponseWriter, req *http.Request) {
 
 	authenticated, err := r.UserService.AuthenticateUser(req.Context(), loginRequest.Username, loginRequest.Password)
 	if err != nil || !authenticated {
-		http.Error(w, "Invalid username or password", http.StatusUnauthorized)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		r.errorResponse(w, err, "Invalid username or password")
 		if r.Metrics != nil {
 			r.Metrics.IncCounter(LoginFailedTotal)
 			duration := time.Since(startTime).Seconds()
@@ -177,7 +189,8 @@ func (r *Route) Login(w http.ResponseWriter, req *http.Request) {
 
 	sessionToken, err := auth.CreateToken(loginRequest.Username, r.PrivateKey)
 	if err != nil {
-		http.Error(w, "Failed to generate session token", http.StatusInternalServerError)
+		w.WriteHeader(http.StatusInternalServerError)
+		r.errorResponse(w, err, "Failed to generate session token")
 		if r.Metrics != nil {
 			r.Metrics.IncCounter(LoginFailedTotal)
 		}
@@ -199,7 +212,8 @@ func (r *Route) Login(w http.ResponseWriter, req *http.Request) {
 		Message: "Login successful",
 	}
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		w.WriteHeader(http.StatusInternalServerError)
+		r.errorResponse(w, err, "Failed to encode response")
 		if r.Metrics != nil {
 			r.Metrics.IncCounter(LoginFailedTotal)
 		}
@@ -212,7 +226,13 @@ func (r *Route) Login(w http.ResponseWriter, req *http.Request) {
 func (r *Route) Create(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set(ContentType, ContentTypeJson)
 	w.WriteHeader(http.StatusNotImplemented)
-	_ = json.NewEncoder(w).Encode(map[string]string{
-		"error": "Create route has not been implemented yet",
-	})
+	r.errorResponse(w, fmt.Errorf("create route not implemented"), "Create route has not been implemented yet")
+}
+
+func (r *Route) errorResponse(w http.ResponseWriter, err error, message string) {
+	jsonResponse := map[string]string{
+		"error":   err.Error(),
+		"message": message,
+	}
+	_ = json.NewEncoder(w).Encode(jsonResponse)
 }
