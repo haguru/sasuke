@@ -10,8 +10,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// UserService handles business logic related to users.
-// It depends on the UserRepository interface.
+
 type UserService struct {
 	UserRepo interfaces.UserRepository
 }
@@ -40,8 +39,7 @@ func (s *UserService) RegisterUser(ctx context.Context, username, password strin
 	return userID, nil
 }
 
-// AuthenticateUser attempts to find a user by username and verify their password.
-// Returns the user's ID if successful, or an error.
+// AuthenticateUser verifies a user's credentials and returns their ID or an error.
 func (s *UserService) AuthenticateUser(ctx context.Context, username, password string) (bool, error) {
 	user, err := s.UserRepo.GetUserByUsername(ctx, username)
 	if err != nil {

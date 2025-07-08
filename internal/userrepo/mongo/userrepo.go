@@ -19,16 +19,15 @@ import (
 )
 
 const (
-	MAXLENGTH_USERNAME = 64 // Maximum length for username
+	MaxLengthUserName     = 64
+	DuplicateKeyErrorCode = "E11000 duplicate key error"
 )
 
-// MongoUserRepository implements UserRepository using the generic DBClient.
 type MongoUserRepository struct {
 	dbClient interfaces.DBClient // Here we use the concrete Mongo implementation of DBClient
 }
 
-// NewMongoUserRepository creates a new MongoDB repository instance.
-// It takes a concrete mongo.MongoDBClient.
+// NewMongoUserRepository returns a new MongoUserRepository.
 func NewMongoUserRepository(dbClient interfaces.DBClient) (interfaces.UserRepository, error) {
 	if dbClient == nil {
 		return nil, fmt.Errorf("dbClient cannot be nil")
@@ -42,7 +41,6 @@ func NewMongoUserRepository(dbClient interfaces.DBClient) (interfaces.UserReposi
 
 // AddUser saves a new user to MongoDB via DBClient.
 func (r *MongoUserRepository) AddUser(ctx context.Context, user models.User) (string, error) {
-	// convert models.User struct to a MongoDB BSON document
 	usermap := make(map[string]interface{})
 	err := mapstructure.Decode(user, &usermap)
 	if err != nil {
@@ -51,7 +49,7 @@ func (r *MongoUserRepository) AddUser(ctx context.Context, user models.User) (st
 
 	insertedID, err := r.dbClient.InsertOne(ctx, constants.UsersCollection, usermap)
 	if err != nil {
-		if strings.Contains(err.Error(), "E11000 duplicate key error") { // MongoDB specific duplicate key error check
+		if strings.Contains(err.Error(), DuplicateKeyErrorCode) { // MongoDB specific duplicate key error check
 			return "", fmt.Errorf("username '%s' already exists", user.Username)
 		}
 		return "", fmt.Errorf("failed to add user to MongoDB: %w", err)
@@ -64,8 +62,7 @@ func (r *MongoUserRepository) AddUser(ctx context.Context, user models.User) (st
 	return objID.Hex(), nil
 }
 
-// GetUserByUsername retrieves a user from MongoDB via DBClient.
-// validation of username is done before querying.
+// GetUserByUsername fetches a user by username, returns nil if not found.
 func (r *MongoUserRepository) GetUserByUsername(ctx context.Context, username string) (*models.User, error) {
 	var user models.User
 	filter := map[string]any{"username": username}
@@ -81,15 +78,13 @@ func (r *MongoUserRepository) GetUserByUsername(ctx context.Context, username st
 	return &user, nil
 }
 
-// EnsureIndices creates unique indices for username in MongoDB (uses direct client helper).
-// Note: This calls a specific helper on mongo.MongoDBClient, as DBClient doesn't have a generic index method.
+// EnsureIndices creates a unique index for username in MongoDB.
 func (r *MongoUserRepository) EnsureIndices(ctx context.Context) error {
 	indexModel := mongosdk.IndexModel{
 		Keys:    bson.M{"username": 1},
 		Options: options.Index().SetUnique(true),
 	}
-	// Here, we have to call a MongoDB-specific method provided by our concrete mongo.MongoDBClient
-	// because the generic DBClient interface doesn't expose index creation.
+	// Call MongoDB-specific method for index creation.
 	return r.dbClient.EnsureSchema(ctx, constants.UsersCollection, indexModel)
 }
 
