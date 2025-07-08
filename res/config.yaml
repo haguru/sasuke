@@ -3,6 +3,9 @@ host: localhost
 port: 50051
 loglevel: DEBUG
 private_key_path: ./res/sharingan_key.pem
+rate_limiter:
+  interval: 5m
+  limit: 5
 database:
   type: mongo
   mongodb_config:

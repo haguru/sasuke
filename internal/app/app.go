@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"fmt"
+	"net/http"
 
 	"github.com/haguru/sasuke/config"
 	"github.com/haguru/sasuke/internal/auth"
 	"github.com/haguru/sasuke/internal/interfaces"
+	"github.com/haguru/sasuke/internal/middleware"
 	"github.com/haguru/sasuke/internal/routes"
 	"github.com/haguru/sasuke/internal/server"
 	mongoUserRepo "github.com/haguru/sasuke/internal/userrepo/mongo"
@@ -16,10 +18,11 @@ import (
 	"github.com/haguru/sasuke/pkg/databases/mongo"
 	"github.com/haguru/sasuke/pkg/databases/postgres"
 	"github.com/haguru/sasuke/pkg/metrics"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	structValidator "github.com/go-playground/validator/v10"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"golang.org/x/time/rate"
 )
 
 // App represents the main application, containing server and configuration.
@@ -96,7 +99,13 @@ func NewApp(configPath string) (*App, error) {
 	}
 	fmt.Println("Signup route added successfully")
 
-	err = app.Server.AddRoute(routes.LoginRouteAPI, route.Login)
+	loginLimiter := rate.NewLimiter(rate.Every(cfg.RateLimiter.Interval), cfg.RateLimiter.Limit)
+
+	// Wrap the login handler with rate limiting middleware.
+	rateLimiter := middleware.RateLimitMiddleware(loginLimiter)
+	loginHandler := rateLimiter(http.HandlerFunc(route.Login))
+
+	err = app.Server.AddRoute(routes.LoginRouteAPI, loginHandler.ServeHTTP)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add login route: %v", err)
 	}
