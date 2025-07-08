@@ -48,6 +48,10 @@ func TestReadLocalConfig(t *testing.T) {
 				Port:           "50051",
 				LogLevel:       "DEBUG",
 				PrivateKeyPath: "./res/sharingan_key.pem",
+				RateLimiter: RateLimiterConfig{
+					Interval:     5 * time.Minute,
+					Limit:       5,
+				},
 				// Assuming the database configuration is also part of the config file
 				Database: Database{
 					Type: "mongo",

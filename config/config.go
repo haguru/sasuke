@@ -14,12 +14,13 @@ const (
 
 // ServiceConfig holds the configuration for the service.
 type ServiceConfig struct {
-	ServiceName    string   `yaml:"service_name" validate:"required"`
-	LogLevel       string   `yaml:"loglevel" validate:"required"`
-	Host           string   `yaml:"host" validate:"required"`
-	Port           string   `yaml:"port" validate:"required"`
-	PrivateKeyPath string   `yaml:"private_key_path" validate:"required"`
-	Database       Database `yaml:"database" validate:"required"`
+	ServiceName    string            `yaml:"service_name" validate:"required"`
+	LogLevel       string            `yaml:"loglevel" validate:"required"`
+	Host           string            `yaml:"host" validate:"required"`
+	Port           string            `yaml:"port" validate:"required"`
+	PrivateKeyPath string            `yaml:"private_key_path" validate:"required"`
+	Database       Database          `yaml:"database" validate:"required"`
+	RateLimiter    RateLimiterConfig `yaml:"rate_limiter" validate:"required"`
 }
 
 type Database struct {
@@ -61,8 +62,9 @@ type PostgresServerOptions struct {
 	ConnMaxLifetime time.Duration `yaml:"conn_max_lifetime"`
 }
 
-type ValidFields struct {
-	Fields []string `yaml:"fields" validate:"required"`
+type RateLimiterConfig struct {
+	Interval time.Duration `yaml:"interval" validate:"required"`
+	Limit    int           `yaml:"limit" validate:"required"`
 }
 
 // ReadLocalConfig reads the service configuration from a YAML file at the specified path.
