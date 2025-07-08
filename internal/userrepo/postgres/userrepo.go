@@ -13,6 +13,11 @@ import (
 	"github.com/haguru/sasuke/pkg/databases/postgres"
 )
 
+const(
+	// Unique_ErrorCode is the PostgreSQL error code for unique constraint violations.
+	Unique_ErrorCode = "23505" // PostgreSQL unique violation error code
+)
+
 var ensureSchemaSQL = `
 		CREATE TABLE IF NOT EXISTS users (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -22,24 +27,12 @@ var ensureSchemaSQL = `
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users (username);
 	`
 
-// PostgresUserRepository implements UserRepository for PostgreSQL databases.
+
 type PostgresUserRepository struct {
 	dbClient interfaces.DBClient // Now depends on the concrete postgres.PostgresDatabaseClient
 }
 
-// NewPostgresUserRepository creates a new PostgreSQL repository instance.
-// It takes a postgres.PostgresDatabaseClient as a parameter to interact with the database.
-// This function is used to initialize the repository with a specific database client.
-// It returns a pointer to PostgresUserRepository, which implements the UserRepository interface.
-// This allows the repository to perform operations like adding and retrieving users from a PostgreSQL database.
-// The dbClient is expected to be already configured with the necessary connection details.
-// This function is typically called during the application setup phase, where the database client is created and passed to the repository.
-// It ensures that the repository has a valid database client to perform operations on the PostgreSQL database.
-// Example usage:
-// dbClient := postgres.NewPostgresDatabaseClient("your_connection_string")
-// userRepo := NewPostgresUserRepository(dbClient)
-// This function is part of the user repository package and is used to create a new instance of
-// PostgresUserRepository, which is responsible for handling user-related operations in a PostgreSQL database.
+// NewPostgresUserRepository returns a new PostgresUserRepository using the provided dbClient.
 func NewPostgresUserRepository(dbClient interfaces.DBClient) (interfaces.UserRepository, error) {
 	if dbClient == nil {
 		return nil, fmt.Errorf("dbClient cannot be nil")
@@ -52,8 +45,7 @@ func NewPostgresUserRepository(dbClient interfaces.DBClient) (interfaces.UserRep
 	return &PostgresUserRepository{dbClient: dbClient}, nil
 }
 
-// AddUser saves a new user to PostgreSQL via DBClient.
-// It returns the user's ID as a string if successful, or an error if the operation fails.
+// AddUser inserts a user and returns the new user's ID.
 func (r *PostgresUserRepository) AddUser(ctx context.Context, user models.User) (string, error) {
 	// Convert models.User struct to map[string]interface{} for the generic client
 	doc := make(map[string]interface{})
@@ -66,7 +58,7 @@ func (r *PostgresUserRepository) AddUser(ctx context.Context, user models.User) 
 	insertedID, err := r.dbClient.InsertOne(ctx, constants.UsersCollection, doc)
 	if err != nil {
 		// PostgreSQL specific duplicate key error check (example for `pq` driver)
-		if pgErr, ok := err.(*pq.Error); ok && pgErr.Code == "23505" { // 23505 is unique_violation
+		if pgErr, ok := err.(*pq.Error); ok && pgErr.Code == Unique_ErrorCode { // 23505 is unique_violation
 			return "", fmt.Errorf("username '%s' already exists", user.Username)
 		}
 		return "", fmt.Errorf("failed to add user to PostgreSQL: %w", err)
@@ -78,8 +70,7 @@ func (r *PostgresUserRepository) AddUser(ctx context.Context, user models.User) 
 	return strID, nil
 }
 
-// GetUserByUsername retrieves a user from PostgreSQL via DBClient.
-// It returns nil if the user is not found.
+// GetUserByUsername retrieves a user and returns nil if the user is not found.
 func (r *PostgresUserRepository) GetUserByUsername(ctx context.Context, username string) (*models.User, error) {
 	var user models.User
 	filter := map[string]interface{}{"username": username}
@@ -91,16 +82,12 @@ func (r *PostgresUserRepository) GetUserByUsername(ctx context.Context, username
 	return &user, nil
 }
 
-// EnsureIndices creates a table and unique index for username in PostgreSQL.
-// This method is called to ensure the necessary indices are in place.
-// It returns an error if the table creation fails.
+// EnsureIndices creates a table and unique index and returns an error if the table creation fails.
 func (r *PostgresUserRepository) EnsureIndices(ctx context.Context) error {
 	return r.dbClient.EnsureSchema(ctx, constants.UsersCollection, ensureSchemaSQL)
 }
 
-// Close closes the PostgreSQL database connection.
-// It is important to call this method when the repository is no longer needed.
-// It returns an error if the disconnection fails.
+// Close closes database connection and returns an error if the disconnection fails.
 func (r *PostgresUserRepository) Close(ctx context.Context) error {
 	return r.dbClient.Disconnect(ctx)
 }

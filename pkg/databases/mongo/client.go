@@ -72,14 +72,7 @@ func (m *MongoDBClient) Connect(ctx context.Context, dsn string) error {
 	// Set the maximum pool size
 	clientOptions.SetMaxPoolSize(MAXPOOLSIZE)
 
-	// Set the read preference to primarypreferred
-	// This ensures that read operations are directed to the primary node in a replica set.
-	// If the primary is unavailable, it will read from secondary nodes.
-	// This is useful for applications that require strong consistency.
-	// If you want to read from secondary nodes, you can change this to readpref.SecondaryPreferred()
-	// If you want to read from the primary node only, you can use readpref.Primary()
-	// If you want to read from the nearest node, you can use readpref.Nearest()
-	// For this example, we will use readpref.Primary() to ensure that all
+	// Set read preference to primaryPreferred
 	clientOptions.SetReadPreference(readpref.PrimaryPreferred())
 
 	// Connect to the MongoDB server
@@ -124,25 +117,20 @@ func (m *MongoDBClient) Disconnect(ctx context.Context) error {
 	return nil
 }
 
-// InsertOne inserts a single document into the specified collection in the MongoDB database.
-// It takes a context, the name of the collection, and the document to be inserted.
-// It returns the inserted ID and an error if the operation fails.
+// InsertOne inserts a document and returns its ID.
 func (m *MongoDBClient) InsertOne(ctx context.Context, collectionName string, document interfaces.Document) (interface{}, error) {
 	// Avoid printing sensitive information like passwords
 	fmt.Printf("MongoDBClient: Inserting one into %s\n", collectionName)
 
-	// validate collectionName against a whitelist
 	if !m.validCollections[collectionName] {
 		return nil, fmt.Errorf("MongoDBClient: Invalid collection name: %s", collectionName)
 	}
 
-	// Validate the collection name
-	// Ensure that the collection name is not empty
 	if collectionName == "" {
 		return nil, fmt.Errorf("MongoDBClient: Collection name cannot be empty")
 	}
 
-	// Sanitize the document to prevent NoSQL injection
+	// Sanitize document
 	sanitizedDocument := m.sanitizeDocument(document)
 
 	res, err := m.db.Collection(collectionName).InsertOne(ctx, sanitizedDocument)
@@ -153,24 +141,20 @@ func (m *MongoDBClient) InsertOne(ctx context.Context, collectionName string, do
 	return res.InsertedID, nil
 }
 
-// FindOne retrieves a single document from the specified collection in the MongoDB database.
-// It takes a context, the name of the collection, a filter to match the document,
-// and a result variable to decode the found document into.
-// It returns an error if the operation fails or if no document is found.
+// FindOne retrieves a single document from the specified collection using a filter.
+// It decodes the result into the provided variable and returns an error if no document is found.
 func (m *MongoDBClient) FindOne(ctx context.Context, collectionName string, filter interfaces.Document, result interfaces.Document) error {
 	fmt.Printf("MongoDBClient: Finding one in %s with filter: %v\n", collectionName, filter)
 
-	// validate collectionName against a whitelist
 	if !m.validCollections[collectionName] {
 		return fmt.Errorf("MongoDBClient: Invalid collection name: %s", collectionName)
 	}
 
-	// check collectionName to ensure it is not empty
 	if collectionName == "" {
 		return fmt.Errorf("MongoDBClient: Collection name cannot be empty")
 	}
 
-	// sanitize filer to prevent noSQL injection
+	// Sanitize filter
 	sanitizedFilter := m.sanitizeDocument(filter)
 
 	err := m.db.Collection(collectionName).FindOne(ctx, sanitizedFilter).Decode(result)
@@ -184,22 +168,20 @@ func (m *MongoDBClient) FindOne(ctx context.Context, collectionName string, filt
 	return nil
 }
 
-// FindMany retrieves multiple documents from the specified collection in the MongoDB database.
-// It takes a context, the name of the collection, and a filter to match the documents.
-// It returns a slice of documents that match the filter and an error if the operation fails.
+// FindMany retrieves multiple documents from the specified collection.
+// It returns a slice of matching documents or an error.
 func (m *MongoDBClient) FindMany(ctx context.Context, collectionName string, filter interfaces.Document) ([]interfaces.Document, error) {
 	fmt.Printf("MongoDBClient: Finding many in %s with filter: %v\n", collectionName, filter)
 
-	// validate collectionName against a whitelist
 	if !m.validCollections[collectionName] {
 		return nil, fmt.Errorf("MongoDBClient: Invalid collection name: %s", collectionName)
 	}
-	// check collectionName to ensure it is not empty
+
 	if collectionName == "" {
 		return nil, fmt.Errorf("MongoDBClient: Collection name cannot be empty")
 	}
 
-	// sanitize filter to prevent noSQL injection
+	// Sanitize filter
 	sanitizedFilter := m.sanitizeDocument(filter)
 
 	cursor, err := m.db.Collection(collectionName).Find(ctx, sanitizedFilter)
@@ -225,23 +207,20 @@ func (m *MongoDBClient) FindMany(ctx context.Context, collectionName string, fil
 	return results, nil
 }
 
-// UpdateOne updates a single document in the specified collection in the MongoDB database.
-// It takes a context, the name of the collection, a filter to match the document,
-// and an update document that specifies the changes to be applied.
-// It returns the count of modified documents and an error if the operation fails.
+// UpdateOne modifies a single document in the specified collection using a filter and update document.
+// Returns the count of modified documents and an error if the operation fails.
 func (m *MongoDBClient) UpdateOne(ctx context.Context, collectionName string, filter interfaces.Document, update interfaces.Document) (int64, error) {
 	fmt.Printf("MongoDBClient: Updating one in %s with filter %v, update %v\n", collectionName, filter, update)
 
-	// validate collectionName against a whitelist
 	if !m.validCollections[collectionName] {
 		return 0, fmt.Errorf("MongoDBClient: Invalid collection name: %s", collectionName)
 	}
-	// check collectionName to ensure it is not empty
+
 	if collectionName == "" {
 		return 0, fmt.Errorf("MongoDBClient: Collection name cannot be empty")
 	}
 
-	// sanitize filter and update to prevent noSQL injection
+	// Sanitize filter and update
 	sanitizedFilter := m.sanitizeDocument(filter)
 	sanitizedUpdate := m.sanitizeDocument(update)
 
@@ -253,22 +232,20 @@ func (m *MongoDBClient) UpdateOne(ctx context.Context, collectionName string, fi
 	return res.ModifiedCount, nil
 }
 
-// DeleteOne deletes a single document from the specified collection in the MongoDB database.
-// It takes a context, the name of the collection, and a filter to match the document to be deleted.
-// It returns the count of deleted documents and an error if the operation fails.
+// DeleteOne removes a single document from the specified collection using a filter.
+// Returns the count of deleted documents and an error if the operation fails.
 func (m *MongoDBClient) DeleteOne(ctx context.Context, collectionName string, filter interfaces.Document) (int64, error) {
 	fmt.Printf("MongoDBClient: Deleting one from %s with filter %v\n", collectionName, filter)
 
-	// validate collectionName against a whitelist
 	if !m.validCollections[collectionName] {
 		return 0, fmt.Errorf("MongoDBClient: Invalid collection name: %s", collectionName)
 	}
-	// check collectionName to ensure it is not empty
+
 	if collectionName == "" {
 		return 0, fmt.Errorf("MongoDBClient: Collection name cannot be empty")
 	}
 
-	// sanitize filter to prevent noSQL injection
+	// Sanitize filter
 	sanitizedFilter := m.sanitizeDocument(filter)
 
 	res, err := m.db.Collection(collectionName).DeleteOne(ctx, sanitizedFilter)
@@ -279,22 +256,20 @@ func (m *MongoDBClient) DeleteOne(ctx context.Context, collectionName string, fi
 	return res.DeletedCount, nil
 }
 
-// DeleteMany deletes multiple documents from the specified collection in the MongoDB database.
-// It takes a context, the name of the collection, and a filter to match the documents to be deleted.
-// It returns the count of deleted documents and an error if the operation fails.
+// DeleteMany removes multiple documents from a collection using a filter.
+// Returns the count of deleted documents and an error if the operation fails.
 func (m *MongoDBClient) DeleteMany(ctx context.Context, collectionName string, filter interfaces.Document) (int64, error) {
 	fmt.Printf("MongoDBClient: Deleting many from %s with filter %v\n", collectionName, filter)
 
-	// validate collectionName against a whitelist
 	if !m.validCollections[collectionName] {
 		return 0, fmt.Errorf("MongoDBClient: Invalid collection name: %s", collectionName)
 	}
-	// check collectionName to ensure it is not empty
+
 	if collectionName == "" {
 		return 0, fmt.Errorf("MongoDBClient: Collection name cannot be empty")
 	}
 
-	// sanitize filter to prevent noSQL injection
+	// Sanitize filter
 	sanitizedFilter := m.sanitizeDocument(filter)
 
 	res, err := m.db.Collection(collectionName).DeleteMany(ctx, sanitizedFilter)
@@ -305,35 +280,26 @@ func (m *MongoDBClient) DeleteMany(ctx context.Context, collectionName string, f
 	return res.DeletedCount, nil
 }
 
-// Ping checks the health of the MongoDB connection by sending a ping command.
-// It takes a context for cancellation and timeouts.
+// Ping verifies the MongoDB connection health using a ping command.
 func (m *MongoDBClient) Ping(ctx context.Context) error {
 	fmt.Println("MongoDBClient: Pinging...")
 	return m.client.Ping(ctx, nil)
 }
 
-// getDBNameFromMongoDSN extracts the database name from a MongoDB DSN (Data Source Name).
-// It parses the DSN URL and retrieves the database name from the path.
-// The database name is expected to be the first segment of the path after the leading slash.
-// If the DSN is invalid or the database name cannot be determined, it returns an error
+// getDBNameFromMongoDSN extracts the database name from a MongoDB DSN.
 func (m *MongoDBClient) getDBNameFromMongoDSN(dsn string) (string, error) {
 	u, err := url.Parse(dsn)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse MongoDB DSN: %w", err)
 	}
 
-	// The database name is typically the first part of the path,
-	// after the leading slash.
 	dbName := strings.TrimPrefix(u.Path, "/")
 	if dbName == "" {
 		return "", fmt.Errorf("no database name found in MongoDB DSN path: %s", dsn)
 	}
 
-	// If there are additional path segments or query parameters in the path
-	// (uncommon for just the database name, but possible),
-	// we only want the first segment if the format dictates it.
-	// For simplicity, we assume the path is directly the database name.
-	// For more complex paths like /db/collection, you'd need further logic.
+	// If the path contains additional segments (e.g., /db/collection), use only the first as the database name.
+	// For most cases, the path is just the database name.
 	if idx := strings.Index(dbName, "/"); idx != -1 {
 		dbName = dbName[:idx]
 	}
@@ -341,11 +307,9 @@ func (m *MongoDBClient) getDBNameFromMongoDSN(dsn string) (string, error) {
 	return dbName, nil
 }
 
-// EnsureSchema performs MongoDB-specific index creation (not part of generic DBClient)
-// It ensures that the specified collection has the required index defined by the schema.
-// The schema is expected to be a mongo.IndexModel, which defines the index to be created
-// If the collection does not exist, it will be created automatically by MongoDB when the index is created.
-// This method is used to ensure that the necessary indexes are in place for efficient querying.
+// EnsureSchema creates the required index on the specified collection using the provided mongo.IndexModel.
+// If the collection does not exist, it will be created automatically.
+// This is MongoDB-specific and not part of the generic DBClient.
 func (m *MongoDBClient) EnsureSchema(ctx context.Context, collectionName string, schema interfaces.Document) error {
 	// verify m.db is not nil
 	if m.db == nil {
