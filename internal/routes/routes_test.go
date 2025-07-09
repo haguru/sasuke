@@ -184,8 +184,16 @@ func TestRoute_Login(t *testing.T) {
 		// Mock the GetUserByUsername method to return a user with a hashed password
 		userRepo.On("GetUserByUsername", mock.Anything, username).Return(returnedUser, tt.userrepoError).Maybe()
 
+		logger := mocks.NewMockLogger(t)
+		logger.On("Error", mock.Anything, mock.Anything).Return().Maybe()
+		logger.On("Warn", mock.Anything, mock.Anything).Return().Maybe()
+		logger.On("Info", mock.Anything, mock.Anything).Return().Maybe()
+		logger.On("Debug", mock.Anything, mock.Anything).Return().Maybe()
+
+
 		userService := &userservice.UserService{
 			UserRepo: userRepo, // Use a mock or a real implementation
+			Logger:   logger,    // Use a mock logger
 		}
 
 		// Load the ECDSA private key for signing JWTs
@@ -196,12 +204,15 @@ func TestRoute_Login(t *testing.T) {
 		mockedMetrics := mocks.NewMockMetrics(t)
 		mockedMetrics.On("IncCounter", mock.AnythingOfType("string")).Return().Maybe()
 		mockedMetrics.On("ObserveHistogram", mock.AnythingOfType("string"), mock.AnythingOfType("float64")).Return().Maybe()
+		
+
 		// Create a new Route instance with the mock user service and private key
 		r := &Route{
 			Metrics:     mockedMetrics,
 			UserService: userService,
 			PrivateKey:  privateKey,
 			validator:   structValidator.New(),
+			Logger:      logger,
 		}
 		// Call the Login method with the recorder and request
 		r.Login(rr, req)
@@ -287,12 +298,12 @@ func TestRoute_Signup(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		req := httptest.NewRequest(tt.method, "/signup", nil)
+		req := httptest.NewRequest(tt.method, SignupRouteAPI, nil)
 		if tt.body != "" {
-			req = httptest.NewRequest(tt.method, "/signup", bytes.NewBufferString(tt.body))
+			req = httptest.NewRequest(tt.method, SignupRouteAPI, bytes.NewBufferString(tt.body))
 		}
 		if tt.contentType != "" {
-			req.Header.Set("Content-Type", tt.contentType)
+			req.Header.Set(ContentType, tt.contentType)
 		}
 		rr := httptest.NewRecorder()
 
@@ -301,8 +312,16 @@ func TestRoute_Signup(t *testing.T) {
 		userRepo.On("AddUser", mock.Anything, mock.AnythingOfType("models.User")).
 			Return("", tt.userrepoError).Maybe()
 
+		// Avoid nil pointer dereference in the Route methods
+		logger := mocks.NewMockLogger(t)
+		logger.On("Error", mock.Anything, mock.Anything).Return().Maybe()
+		logger.On("Warn", mock.Anything, mock.Anything).Return().Maybe()
+		logger.On("Info", mock.Anything, mock.Anything).Return().Maybe()
+		logger.On("Debug", mock.Anything, mock.Anything).Return().Maybe()
+
 		userService := &userservice.UserService{
 			UserRepo: userRepo,
+			Logger:   logger, // Use a mock logger
 		}
 
 		// Load the ECDSA private key for signing JWTs
@@ -323,6 +342,7 @@ func TestRoute_Signup(t *testing.T) {
 			UserService: userService,
 			PrivateKey:  privateKey,
 			validator:   structValidator.New(),
+			Logger:      logger,
 		}
 		r.Signup(rr, req)
 		if rr.Code != tt.wantStatusCode {
