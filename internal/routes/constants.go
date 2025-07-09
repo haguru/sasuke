@@ -16,6 +16,23 @@ const (
 	ContentType     = "Content-Type"
 	ContentTypeJson = "application/json"
 
+	// message constants
+	MsgLoginSuccessful   = "Login successful"
+	MsgUserCreatedFormat = "User created successfully with ID: %s"
+
+	// Error messages
+	ErrMethodNotAllowed          = "method not allowed"
+	ErrInvalidContentType        = "content-Type must be application/json"
+	ErrInvalidRequestBody        = "invalid request body"
+	ErrValidationFailed          = "data validation failed"
+	ErrFailedToRegisterUser      = "failed to register user"
+	ErrFailedToEncodeResponse    = "failed to encode response"
+	ErrFailedToDecodeRequest     = "failed to decode request body"
+	ErrFailedToGenerateToken     = "failed to generate session token"
+	ErrInvalidCredentials        = "invalid username or password"
+	ErrCreateRouteNotImplemented = "create route has not been implemented yet"
+	ErrInvalidContentTypeFormat  = "invalid content-type: %s"
+
 	// metrics constants
 	SignupRequestsTotal       = "signup_requests_total"
 	SignupRequestsTotalHelp   = "Total number of signup requests received"

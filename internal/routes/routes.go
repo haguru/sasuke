@@ -20,25 +20,29 @@ type Route struct {
 	UserService *userservice.UserService
 	PrivateKey  *ecdsa.PrivateKey
 	validator   *structValidator.Validate
+	Logger      interfaces.Logger
 }
 
 // NewRoute creates a new Route instance.
 func NewRoute(metrics interfaces.Metrics, userService *userservice.UserService,
 	privateKey *ecdsa.PrivateKey, validator *structValidator.Validate,
+	logger interfaces.Logger,
 ) *Route {
-
 	return &Route{
 		Metrics:     metrics,
 		UserService: userService,
 		PrivateKey:  privateKey,
 		validator:   validator,
+		Logger:      logger,
 	}
 }
 
 // Signup handles user signup requests.
 func (r *Route) Signup(w http.ResponseWriter, req *http.Request) {
+	r.Logger.Info("Signup request received", "method", req.Method, "path", req.URL.Path, "remote_addr", req.RemoteAddr)
 	if req.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
+		r.Logger.Warn(ErrMethodNotAllowed, "method", req.Method, "path", req.URL.Path, "remote_addr", req.RemoteAddr)
 		r.errorResponse(w, fmt.Errorf("method %s not allowed", req.Method), "Method not allowed")
 		return
 	}
@@ -49,7 +53,8 @@ func (r *Route) Signup(w http.ResponseWriter, req *http.Request) {
 
 	if req.Header.Get(ContentType) != ContentTypeJson {
 		w.WriteHeader(http.StatusBadRequest)
-		r.errorResponse(w, fmt.Errorf("invalid content-type: %s", req.Header.Get(ContentType)), "Request Content-Type must be application/json")
+		r.Logger.Warn(ErrInvalidContentType, ContentType, req.Header.Get(ContentType), "path", req.URL.Path, "remote_addr", req.RemoteAddr)
+		r.errorResponse(w, fmt.Errorf(ErrInvalidContentTypeFormat, req.Header.Get(ContentType)), ErrInvalidContentType)
 		if r.Metrics != nil {
 			r.Metrics.IncCounter(SignupErrorsTotal)
 		}
@@ -60,7 +65,8 @@ func (r *Route) Signup(w http.ResponseWriter, req *http.Request) {
 	err := json.NewDecoder(req.Body).Decode(signupRequest)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		r.errorResponse(w, err, "Invalid request body")
+		r.Logger.Error(ErrFailedToDecodeRequest, "error", err, "path", req.URL.Path, "remote_addr", req.RemoteAddr)
+		r.errorResponse(w, err, ErrFailedToDecodeRequest)
 		if r.Metrics != nil {
 			r.Metrics.IncCounter(SignupErrorsTotal)
 		}
@@ -68,10 +74,10 @@ func (r *Route) Signup(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if err := r.validator.Struct(signupRequest); err != nil {
-		// Validation failed, handle the error
 		errors := err.(structValidator.ValidationErrors)
 		w.WriteHeader(http.StatusBadRequest)
-		r.errorResponse(w, fmt.Errorf("invalid signup data: %s", errors), "Signup data validation failed")
+		r.Logger.Warn(ErrValidationFailed, "error", errors, "username", signupRequest.Username, "path", req.URL.Path, "remote_addr", req.RemoteAddr)
+		r.errorResponse(w, fmt.Errorf("invalid signup data: %w", errors), ErrValidationFailed)
 		if r.Metrics != nil {
 			r.Metrics.IncCounter(SignupErrorsTotal)
 		}
@@ -86,7 +92,8 @@ func (r *Route) Signup(w http.ResponseWriter, req *http.Request) {
 	userID, err := r.UserService.RegisterUser(req.Context(), signupRequest.Username, signupRequest.Password)
 	if err != nil {
 		w.WriteHeader(http.StatusConflict)
-		r.errorResponse(w, err, "Failed to register user")
+		r.Logger.Error(ErrFailedToRegisterUser, "error", err, "username", signupRequest.Username, "path", req.URL.Path, "remote_addr", req.RemoteAddr)
+		r.errorResponse(w, err, ErrFailedToRegisterUser)
 		if r.Metrics != nil {
 			r.Metrics.IncCounter(SignupErrorsTotal)
 		}
@@ -103,13 +110,16 @@ func (r *Route) Signup(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 
 	response := &dto.UserSignupResponseDTO{
-		Message: fmt.Sprintf("User created successfully with ID: %s", userID),
+		Message: fmt.Sprintf(MsgUserCreatedFormat, userID),
 		UserID:  userID,
 	}
 
+	r.Logger.Info(MsgUserCreatedFormat, "userID", userID, "username", signupRequest.Username, "path", req.URL.Path, "remote_addr", req.RemoteAddr)
+
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		r.errorResponse(w, err, "Failed to encode response")
+		r.Logger.Error(ErrFailedToEncodeResponse, "error", err, "userID", userID, "username", signupRequest.Username, "path", req.URL.Path, "remote_addr", req.RemoteAddr)
+		r.errorResponse(w, err, ErrFailedToEncodeResponse)
 		if r.Metrics != nil {
 			r.Metrics.IncCounter(SignupErrorsTotal)
 		}
@@ -119,8 +129,10 @@ func (r *Route) Signup(w http.ResponseWriter, req *http.Request) {
 
 // Login handles user login requests.
 func (r *Route) Login(w http.ResponseWriter, req *http.Request) {
+	r.Logger.Info("Login request received", "method", req.Method, "path", req.URL.Path, "remote_addr", req.RemoteAddr)
 	if req.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
+		r.Logger.Warn(ErrMethodNotAllowed, "method", req.Method, "path", req.URL.Path, "remote_addr", req.RemoteAddr)
 		r.errorResponse(w, fmt.Errorf("method %s not allowed", req.Method), "Method not allowed")
 		if r.Metrics != nil {
 			r.Metrics.IncCounter(LoginFailedTotal)
@@ -134,7 +146,8 @@ func (r *Route) Login(w http.ResponseWriter, req *http.Request) {
 
 	if req.Header.Get(ContentType) != ContentTypeJson {
 		w.WriteHeader(http.StatusBadRequest)
-		r.errorResponse(w, fmt.Errorf("invalid content-type: %s", req.Header.Get(ContentType)), "Content-Type must be application/json")
+		r.Logger.Warn(ErrInvalidContentType, ContentType, req.Header.Get(ContentType), "path", req.URL.Path, "remote_addr", req.RemoteAddr)
+		r.errorResponse(w, fmt.Errorf(ErrInvalidContentTypeFormat, req.Header.Get(ContentType)), ErrInvalidContentType)
 		if r.Metrics != nil {
 			r.Metrics.IncCounter(LoginFailedTotal)
 		}
@@ -145,7 +158,8 @@ func (r *Route) Login(w http.ResponseWriter, req *http.Request) {
 	err := json.NewDecoder(req.Body).Decode(loginRequest)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		r.errorResponse(w, err, "Invalid request body")
+		r.Logger.Error(ErrValidationFailed, "error", err, "path", req.URL.Path, "remote_addr", req.RemoteAddr)
+		r.errorResponse(w, err, ErrValidationFailed)
 		if r.Metrics != nil {
 			r.Metrics.IncCounter(LoginFailedTotal)
 		}
@@ -153,10 +167,10 @@ func (r *Route) Login(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if err := r.validator.Struct(loginRequest); err != nil {
-		// Validation failed, handle the error
 		errors := err.(structValidator.ValidationErrors)
 		w.WriteHeader(http.StatusBadRequest)
-		r.errorResponse(w, fmt.Errorf("invalid login data: %s", errors), "Login data validation failed")
+		r.Logger.Warn(ErrValidationFailed, "error", errors, "username", loginRequest.Username, "path", req.URL.Path, "remote_addr", req.RemoteAddr)
+		r.errorResponse(w, fmt.Errorf("invalid login data: %w", errors), ErrValidationFailed)
 		if r.Metrics != nil {
 			r.Metrics.IncCounter(LoginFailedTotal)
 		}
@@ -172,7 +186,8 @@ func (r *Route) Login(w http.ResponseWriter, req *http.Request) {
 	if err != nil || !authenticated {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusUnauthorized)
-		r.errorResponse(w, err, "Invalid username or password")
+		r.Logger.Warn("Authentication failed for user", "username", loginRequest.Username, "error", err, "path", req.URL.Path, "remote_addr", req.RemoteAddr)
+		r.errorResponse(w, err, ErrInvalidCredentials)
 		if r.Metrics != nil {
 			r.Metrics.IncCounter(LoginFailedTotal)
 			duration := time.Since(startTime).Seconds()
@@ -190,7 +205,8 @@ func (r *Route) Login(w http.ResponseWriter, req *http.Request) {
 	sessionToken, err := auth.CreateToken(loginRequest.Username, r.PrivateKey)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		r.errorResponse(w, err, "Failed to generate session token")
+		r.Logger.Error(ErrFailedToGenerateToken, "error", err, "username", loginRequest.Username, "path", req.URL.Path, "remote_addr", req.RemoteAddr)
+		r.errorResponse(w, err, ErrFailedToGenerateToken)
 		if r.Metrics != nil {
 			r.Metrics.IncCounter(LoginFailedTotal)
 		}
@@ -211,9 +227,11 @@ func (r *Route) Login(w http.ResponseWriter, req *http.Request) {
 	response := &dto.LoginResponseDTO{
 		Message: "Login successful",
 	}
+	r.Logger.Info(MsgLoginSuccessful, "username", loginRequest.Username, "path", req.URL.Path, "remote_addr", req.RemoteAddr)
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		r.errorResponse(w, err, "Failed to encode response")
+		r.Logger.Error(ErrFailedToEncodeResponse, "error", err, "username", loginRequest.Username, "path", req.URL.Path, "remote_addr", req.RemoteAddr)
+		r.errorResponse(w, err, ErrFailedToEncodeResponse)
 		if r.Metrics != nil {
 			r.Metrics.IncCounter(LoginFailedTotal)
 		}
@@ -224,6 +242,7 @@ func (r *Route) Login(w http.ResponseWriter, req *http.Request) {
 // Create route
 // TODO complete API
 func (r *Route) Create(w http.ResponseWriter, req *http.Request) {
+	r.Logger.Info("Create route called", "method", req.Method, "path", req.URL.Path, "remote_addr", req.RemoteAddr)
 	w.Header().Set(ContentType, ContentTypeJson)
 	w.WriteHeader(http.StatusNotImplemented)
 	r.errorResponse(w, fmt.Errorf("create route not implemented"), "Create route has not been implemented yet")
